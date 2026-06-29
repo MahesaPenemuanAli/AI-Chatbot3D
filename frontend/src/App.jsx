@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { 
-  Plus, MessageSquare, Trash2, Send, Settings, Bot, User, 
-  Sparkles, Paperclip, Mic, LogOut, Globe, Activity, Check, Copy, Lock, AlertCircle, Compass, MapPin 
+  Plus, Trash2, Send, Settings, User, 
+  Sparkles, Paperclip, Mic, LogOut, Globe, Activity, Check, Copy, Lock, AlertCircle, Compass, MapPin, X, Square 
 } from 'lucide-react'
 import './App.css'
+import AvatarCanvas from './components/AvatarCanvas'
+import { WeatherWidget, MapWidget, ItineraryWidget } from './components/TravelWidgets'
 
 const INITIAL_SESSIONS = [
   { id: 'session-1', title: 'Eksplorasi Candi Borobudur', model: 'Gemini 2.5 Pro', guide: 'Siti' },
@@ -27,9 +29,27 @@ const INITIAL_MESSAGES = {
 }
 
 const GUIDES = [
-  { id: 'Siti', name: 'Siti', role: 'Pemandu Alam & Petualangan', avatar: '🌴' },
-  { id: 'Budi', name: 'Budi', role: 'Pemandu Sejarah & Budaya', avatar: '🏛️' },
-  { id: 'Aditya', name: 'Aditya', role: 'Pemandu Kuliner & Rekreasi', avatar: '🍲' }
+  { 
+    id: 'Siti', 
+    name: 'Siti', 
+    role: 'Pemandu Alam & Petualangan', 
+    avatar: '🌴', 
+    modelUrl: 'https://models.readyplayer.me/64b5e612f0e0c3453b3f66a2.glb' 
+  },
+  { 
+    id: 'Budi', 
+    name: 'Budi', 
+    role: 'Pemandu Sejarah & Budaya', 
+    avatar: '🏛️', 
+    modelUrl: 'https://models.readyplayer.me/64b5e6cf2c2f6d0f507b56a1.glb' 
+  },
+  { 
+    id: 'Aditya', 
+    name: 'Aditya', 
+    role: 'Pemandu Kuliner & Rekreasi', 
+    avatar: '🍲', 
+    modelUrl: 'https://models.readyplayer.me/64b5e7392c2f6d0f507b5a83.glb' 
+  }
 ]
 
 function App() {
@@ -68,6 +88,13 @@ function App() {
   const [authError, setAuthError] = useState('')
   const [copiedId, setCopiedId] = useState(null)
 
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
+  const [selectedFiles, setSelectedFiles] = useState([])
+  
+  const mediaRecorderRef = useRef(null)
+  const audioChunksRef = useRef([])
+  const fileInputRef = useRef(null)
   const messagesEndRef = useRef(null)
 
   useEffect(() => {
@@ -210,17 +237,79 @@ function App() {
     }
   }
 
-  const handleSendMessage = async (e) => {
-    e.preventDefault()
-    if (!input.trim()) return
+  const speakText = (text) => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel()
+      const cleanText = text.replace(/[*#`_\-]/g, '')
+      const utterance = new SpeechSynthesisUtterance(cleanText)
+      utterance.lang = 'id-ID'
+      
+      utterance.onstart = () => setIsSpeaking(true)
+      utterance.onend = () => setIsSpeaking(false)
+      utterance.onerror = () => setIsSpeaking(false)
+      
+      window.speechSynthesis.speak(utterance)
+    }
+  }
 
-    const userMsgText = input.trim()
-    setInput('')
+  const handleFileChange = (e) => {
+    if (e.target.files) {
+      const filesArray = Array.from(e.target.files)
+      setSelectedFiles(prev => [...prev, ...filesArray])
+    }
+  }
+
+  const triggerFileSelect = () => {
+    fileInputRef.current?.click()
+  }
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      audioChunksRef.current = []
+      
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      }
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
+        const audioFile = new File([audioBlob], 'voice_message.wav', { type: 'audio/wav' })
+        
+        handleSendMessageDirectly('Mengirimkan pesan suara...', [audioFile])
+        
+        stream.getTracks().forEach(track => track.stop())
+      }
+
+      mediaRecorder.start()
+      setIsRecording(true)
+    } catch (err) {
+      alert('Tidak dapat mengakses mikrofon: ' + err.message)
+    }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop()
+      setIsRecording(false)
+    }
+  }
+
+  const handleSendMessageDirectly = async (text, files = []) => {
+    const userMsgText = text
+    const filesToSend = files.length > 0 ? files : selectedFiles
+    setSelectedFiles([])
 
     const userMessage = {
       id: Date.now(),
       role: 'user',
-      content: userMsgText
+      content: userMsgText,
+      files: filesToSend.map(f => ({ name: f.name, type: f.type }))
     }
 
     const currentSessionMessages = messages[activeSessionId] || []
@@ -231,29 +320,25 @@ function App() {
       [activeSessionId]: updatedSessionMessages
     })
 
-    const activeSession = sessions.find(s => s.id === activeSessionId)
-    if (activeSession && activeSession.title === 'Destinasi Wisata Baru') {
-      const updatedSessions = sessions.map(s => {
-        if (s.id === activeSessionId) {
-          return { ...s, title: userMsgText.slice(0, 25) + (userMsgText.length > 25 ? '...' : '') }
-        }
-        return s
-      })
-      setSessions(updatedSessions)
-    }
-
     setIsTyping(true)
 
     if (connectionStatus === 'live' && token) {
       try {
+        const formData = new FormData()
+        formData.append('message', userMsgText)
+        formData.append('model', selectedModel)
+        
+        filesToSend.forEach((file, index) => {
+          formData.append(`attachments[${index}]`, file)
+        })
+
         const response = await fetch(`${backendUrl}/chat/sessions/${activeSessionId}/messages`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`,
             'Accept': 'application/json'
           },
-          body: JSON.stringify({ message: userMsgText, model: selectedModel })
+          body: formData
         })
 
         if (!response.ok) throw new Error('API gagal merespons')
@@ -267,6 +352,16 @@ function App() {
             content: data.ai_message.content
           }]
         }))
+        
+        if (data.ai_message.audio_url) {
+          const audio = new Audio(data.ai_message.audio_url)
+          audio.onplay = () => setIsSpeaking(true)
+          audio.onended = () => setIsSpeaking(false)
+          audio.play()
+        } else {
+          speakText(data.ai_message.content)
+        }
+        
         setIsTyping(false)
         return
       } catch (err) {
@@ -275,7 +370,7 @@ function App() {
     }
 
     setTimeout(() => {
-      let replyText = `Saya telah menerima pertanyaan Anda tentang "${userMsgText}". Saat ini saya sedang berjalan di **Sandbox Mode** (belum terhubung ke backend Laravel).\n\nUntuk menghubungkan dengan asisten pariwisata pariwisata pariwisata yang aktif:\n1. Jalankan database di XAMPP.\n2. Jalankan \`php artisan serve\` di folder \`backend\`.\n3. Masuk/Login melalui modal pengaturan di aplikasi ini.`
+      let replyText = `Saya telah menerima pertanyaan Anda tentang "${userMsgText}". Saat ini saya sedang berjalan di **Sandbox Mode** (belum terhubung ke backend Laravel).\n\nUntuk menghubungkan dengan asisten pariwisata yang aktif:\n1. Jalankan database di XAMPP.\n2. Jalankan \`php artisan serve\` di folder \`backend\`.\n3. Masuk/Login melalui modal pengaturan di aplikasi ini.`
 
       const lowerInput = userMsgText.toLowerCase()
       const currentGuideData = GUIDES.find(g => g.id === selectedGuide)
@@ -297,14 +392,50 @@ function App() {
           content: replyText
         }]
       }))
+      
+      speakText(replyText)
       setIsTyping(false)
     }, 1500)
+  }
+
+  const handleSendMessage = (e) => {
+    e.preventDefault()
+    if (!input.trim() && selectedFiles.length === 0) return
+    handleSendMessageDirectly(input.trim())
+    setInput('')
   }
 
   const handleCopyCode = (text, id) => {
     navigator.clipboard.writeText(text)
     setCopiedId(id)
     setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const renderWidgets = (content) => {
+    const lower = content.toLowerCase()
+    const widgets = []
+
+    if (lower.includes('borobudur')) {
+      widgets.push(<WeatherWidget key="weather-boro" destination="Candi Borobudur, Magelang" />)
+      widgets.push(<MapWidget key="map-boro" destination="Candi Borobudur" coordinates="S: 7.6080, E: 110.2040" />)
+    } else if (lower.includes('kelingking') || lower.includes('nusa penida')) {
+      widgets.push(<WeatherWidget key="weather-kel" destination="Pantai Kelingking, Bali" />)
+      widgets.push(<MapWidget key="map-kel" destination="Kelingking Beach, Nusa Penida" coordinates="S: 8.7391, E: 115.4711" />)
+    } else if (lower.includes('yogyakarta') || lower.includes('jogja')) {
+      widgets.push(<WeatherWidget key="weather-jog" destination="Yogyakarta" />)
+      widgets.push(<MapWidget key="map-jog" destination="Jalan Malioboro, Yogyakarta" coordinates="S: 7.7971, E: 110.3688" />)
+    }
+
+    if (lower.includes('rencana') || lower.includes('itinerary') || lower.includes('rute') || lower.includes('cara menuju')) {
+      const mockItinerary = [
+        { time: 'Hari 1: Kedatangan', title: 'Tiba & Check-in Hotel', description: 'Tiba di lokasi destinasi utama, beristirahat sejenak, dan menikmati makan malam lokal khas daerah sekitar.' },
+        { time: 'Hari 2: Eksplorasi Utama', title: 'Wisata Budaya & Spot Foto Terbaik', description: 'Menjelajahi ikon wisata terpopuler mulai pagi hari untuk mendapatkan pencahayaan foto terbaik.' },
+        { time: 'Hari 3: Wisata Kuliner & Belanja', title: 'Cinderamata & Kepulangan', description: 'Membeli buah tangan/oleh-oleh kerajinan lokal dan bersiap untuk perjalanan pulang.' }
+      ]
+      widgets.push(<ItineraryWidget key="itinerary" items={mockItinerary} />)
+    }
+
+    return widgets.length > 0 ? <div className="mt-4 space-y-2">{widgets}</div> : null
   }
 
   const renderMessageContent = (content) => {
@@ -492,7 +623,16 @@ function App() {
 
         <header className="h-[64px] border-b border-white/5 flex items-center justify-between px-6 bg-[#050b0a]/80 backdrop-blur-md z-10">
           <div className="flex items-center gap-3">
-            <div className="text-2xl">{activeGuideData.avatar}</div>
+            <div className="text-2xl flex items-center gap-2">
+              <span>{activeGuideData.avatar}</span>
+              {isSpeaking && (
+                <span className="flex gap-0.5 items-center h-3">
+                  <span className="w-0.5 bg-emerald-400 animate-bounce h-2" style={{ animationDelay: '0s', animationDuration: '0.4s' }}></span>
+                  <span className="w-0.5 bg-emerald-400 animate-bounce h-3" style={{ animationDelay: '0.1s', animationDuration: '0.5s' }}></span>
+                  <span className="w-0.5 bg-emerald-400 animate-bounce h-1" style={{ animationDelay: '0.2s', animationDuration: '0.3s' }}></span>
+                </span>
+              )}
+            </div>
             <div className="flex flex-col">
               <h2 className="text-xs font-bold text-white">{currentSession ? currentSession.title : 'Destinasi Wisata'}</h2>
               <span className="text-[10px] text-emerald-500 font-medium">Pemandu Aktif: {activeGuideData.name} ({activeGuideData.role})</span>
@@ -518,136 +658,222 @@ function App() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {currentMessages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center max-w-lg mx-auto text-center space-y-6 animate-fade-in">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 to-cyan-500 flex items-center justify-center shadow-xl shadow-emerald-900/30">
-                <Compass size={36} className="text-white" />
-              </div>
-              <div className="space-y-2">
-                <h1 className="text-xl font-bold tracking-tight text-white">Halo! Mau Liburan ke Mana Hari Ini?</h1>
-                <p className="text-xs text-emerald-500/80 font-medium">
-                  Saya {activeGuideData.name}, siap membantu Anda merencanakan perjalanan, merekomendasikan kuliner legendaris, dan menjelaskan sejarah destinasi wisata di Indonesia.
-                </p>
-              </div>
+        <div className="flex-1 flex overflow-hidden">
+          
+          <div className="flex-1 flex flex-col h-full overflow-hidden">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {currentMessages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center max-w-lg mx-auto text-center space-y-6 animate-fade-in">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 to-cyan-500 flex items-center justify-center shadow-xl shadow-emerald-900/30">
+                    <Compass size={36} className="text-white" />
+                  </div>
+                  <div className="space-y-2">
+                    <h1 className="text-xl font-bold tracking-tight text-white">Halo! Mau Liburan ke Mana Hari Ini?</h1>
+                    <p className="text-xs text-emerald-500/80 font-medium">
+                      Saya {activeGuideData.name}, siap membantu Anda merencanakan perjalanan, merekomendasikan kuliner legendaris, dan menjelaskan sejarah destinasi wisata di Indonesia.
+                    </p>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-3 w-full mt-4">
-                <div 
-                  onClick={() => setInput('Bagaimana rencana perjalanan 3 hari terbaik di Bali?')}
-                  className="p-4 rounded-xl bg-white/[0.01] border border-white/5 hover:border-emerald-500/25 hover:bg-white/[0.03] text-left cursor-pointer transition-all duration-200"
-                >
-                  <h3 className="text-xs font-bold text-emerald-400 mb-1">Rencana Liburan</h3>
-                  <p className="text-[11px] text-gray-400">Rencana itinerary 3 hari mengeksplorasi keindahan alam Bali.</p>
+                  <div className="grid grid-cols-2 gap-3 w-full mt-4">
+                    <div 
+                      onClick={() => setInput('Bagaimana rencana perjalanan 3 hari terbaik di Bali?')}
+                      className="p-4 rounded-xl bg-white/[0.01] border border-white/5 hover:border-emerald-500/25 hover:bg-white/[0.03] text-left cursor-pointer transition-all duration-200"
+                    >
+                      <h3 className="text-xs font-bold text-emerald-400 mb-1">Rencana Liburan</h3>
+                      <p className="text-[11px] text-gray-400">Rencana itinerary 3 hari mengeksplorasi keindahan alam Bali.</p>
+                    </div>
+                    <div 
+                      onClick={() => setInput('Tolong jelaskan sejarah dan misteri di Candi Borobudur')}
+                      className="p-4 rounded-xl bg-white/[0.01] border border-white/5 hover:border-emerald-500/25 hover:bg-white/[0.03] text-left cursor-pointer transition-all duration-200"
+                    >
+                      <h3 className="text-xs font-bold text-cyan-400 mb-1">Sejarah & Budaya</h3>
+                      <p className="text-[11px] text-gray-400">Jelajahi filosofi tingkatan candi Buddha terbesar di dunia.</p>
+                    </div>
+                  </div>
                 </div>
-                <div 
-                  onClick={() => setInput('Tolong jelaskan sejarah dan misteri di Candi Borobudur')}
-                  className="p-4 rounded-xl bg-white/[0.01] border border-white/5 hover:border-emerald-500/25 hover:bg-white/[0.03] text-left cursor-pointer transition-all duration-200"
-                >
-                  <h3 className="text-xs font-bold text-cyan-400 mb-1">Sejarah & Budaya</h3>
-                  <p className="text-[11px] text-gray-400">Jelajahi filosofi tingkatan candi Buddha terbesar di dunia.</p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="max-w-3xl mx-auto space-y-6">
-              {currentMessages.map(msg => (
-                <div 
-                  key={msg.id} 
-                  className={`flex gap-4 p-4 rounded-2xl border transition-all animate-fade-in ${
-                    msg.role === 'user' 
-                      ? 'bg-emerald-950/10 border-emerald-500/10 ml-12 justify-end' 
-                      : 'bg-white/[0.01] border-white/5 mr-12'
-                  }`}
-                >
-                  {msg.role !== 'user' && (
-                    <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-cyan-500 flex items-center justify-center shrink-0 shadow-md">
-                      <Sparkles size={14} className="text-white" />
+              ) : (
+                <div className="max-w-3xl mx-auto space-y-6">
+                  {currentMessages.map(msg => (
+                    <div 
+                      key={msg.id} 
+                      className={`flex gap-4 p-4 rounded-2xl border transition-all animate-fade-in ${
+                        msg.role === 'user' 
+                          ? 'bg-emerald-950/10 border-emerald-500/10 ml-12 justify-end' 
+                          : 'bg-white/[0.01] border-white/5 mr-12'
+                      }`}
+                    >
+                      {msg.role !== 'user' && (
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-cyan-500 flex items-center justify-center shrink-0 shadow-md">
+                          <Sparkles size={14} className="text-white" />
+                        </div>
+                      )}
+                      
+                      <div className="flex-1 space-y-1.5 min-w-0">
+                        <div className="text-[9px] font-bold tracking-wider text-emerald-600 uppercase">
+                          {msg.role === 'user' ? 'Wisatawan' : activeGuideData.name}
+                        </div>
+                        <div className="text-xs text-gray-200 overflow-hidden leading-relaxed">
+                          {renderMessageContent(msg.content)}
+                          
+                          {msg.role !== 'user' && renderWidgets(msg.content)}
+
+                          {msg.files && msg.files.length > 0 && (
+                            <div className="flex gap-2 mt-3 flex-wrap">
+                              {msg.files.map((file, i) => (
+                                <div key={i} className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/5 text-[10px] text-emerald-400 flex items-center gap-1.5 font-medium">
+                                  <Paperclip size={10} />
+                                  <span>{file.name}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {msg.role === 'user' && (
+                        <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+                          <User size={14} className="text-emerald-400" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {isTyping && (
+                    <div className="flex gap-4 p-4 rounded-2xl bg-white/[0.01] border border-white/5 mr-12 max-w-xs animate-pulse">
+                      <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-cyan-500 flex items-center justify-center shrink-0">
+                        <Sparkles size={14} className="text-white animate-spin" />
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                      </div>
                     </div>
                   )}
                   
-                  <div className="flex-1 space-y-1.5 min-w-0">
-                    <div className="text-[9px] font-bold tracking-wider text-emerald-600 uppercase">
-                      {msg.role === 'user' ? 'Wisatawan' : activeGuideData.name}
-                    </div>
-                    <div className="text-xs text-gray-200 overflow-hidden leading-relaxed">
-                      {renderMessageContent(msg.content)}
-                    </div>
-                  </div>
-
-                  {msg.role === 'user' && (
-                    <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
-                      <User size={14} className="text-emerald-400" />
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {isTyping && (
-                <div className="flex gap-4 p-4 rounded-2xl bg-white/[0.01] border border-white/5 mr-12 max-w-xs animate-pulse">
-                  <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-cyan-500 flex items-center justify-center shrink-0">
-                    <Sparkles size={14} className="text-white animate-spin" />
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                  </div>
+                  <div ref={messagesEndRef} />
                 </div>
               )}
-              
-              <div ref={messagesEndRef} />
             </div>
-          )}
-        </div>
 
-        <footer className="p-6 border-t border-white/5 bg-[#050b0a]/40 backdrop-blur-md z-10">
-          <form onSubmit={handleSendMessage} className="max-w-3xl mx-auto relative flex items-end gap-2 bg-white/5 border border-white/5 focus-within:border-emerald-500/30 focus-within:ring-1 focus-within:ring-emerald-500/10 rounded-2xl p-2 transition-all">
-            <button 
-              type="button" 
-              className="p-2.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
-              title="Lampirkan Dokumen/Foto Tiket"
-            >
-              <Paperclip size={16} />
-            </button>
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  handleSendMessage(e)
-                }
-              }}
-              placeholder={`Tanya ${activeGuideData.name} tentang destinasi wisata...`}
-              rows={1}
-              className="flex-1 bg-transparent border-0 resize-none text-xs text-gray-100 placeholder-gray-500 py-2 px-3 focus:outline-none max-h-32 overflow-y-auto font-sans"
-              style={{ height: '38px' }}
-            />
-            <button 
-              type="button" 
-              className="p-2.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
-              title="Kirim Suara Real-time"
-            >
-              <Mic size={16} />
-            </button>
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              className={`p-2.5 rounded-xl transition-all ${
-                input.trim() 
-                  ? 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-md shadow-emerald-600/20' 
-                  : 'text-gray-500 cursor-not-allowed'
-              }`}
-            >
-              <Send size={14} />
-            </button>
-          </form>
-          <div className="text-center text-[10px] text-gray-600 mt-3">
-            {connectionStatus === 'live' 
-              ? 'Terhubung dengan API backend Laravel. Percakapan tersimpan di database SQLite.' 
-              : 'Menjalankan Mode Demo. Konfigurasikan koneksi API di pengaturan jika ingin menggunakan mode Live.'}
+            <footer className="p-6 border-t border-white/5 bg-[#050b0a]/40 backdrop-blur-md z-10">
+              <input 
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+                multiple
+                accept="image/*,video/*"
+              />
+
+              {selectedFiles.length > 0 && (
+                <div className="max-w-3xl mx-auto flex items-center gap-2.5 p-3 bg-white/[0.02] border border-white/5 rounded-2xl mb-3 animate-fade-in">
+                  {selectedFiles.map((file, idx) => (
+                    <div key={idx} className="relative w-12 h-12 rounded-xl overflow-hidden border border-white/10 bg-black/40 flex items-center justify-center shrink-0">
+                      {file.type.startsWith('image/') ? (
+                        <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="text-[9px] text-emerald-400 font-bold uppercase">Vid</div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== idx))}
+                        className="absolute top-0 right-0 bg-red-500/80 hover:bg-red-600 text-white rounded-bl-lg p-0.5 transition-colors"
+                      >
+                        <X size={10} />
+                      </button>
+                    </div>
+                  ))}
+                  <span className="text-[10px] text-gray-500 font-medium ml-1">{selectedFiles.length} File terpilih</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSendMessage} className="max-w-3xl mx-auto relative flex items-end gap-2 bg-white/5 border border-white/5 focus-within:border-emerald-500/30 focus-within:ring-1 focus-within:ring-emerald-500/10 rounded-2xl p-2 transition-all">
+                <button 
+                  type="button" 
+                  onClick={triggerFileSelect}
+                  className="p-2.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+                  title="Lampirkan Dokumen/Foto Tiket"
+                >
+                  <Paperclip size={16} />
+                </button>
+
+                {isRecording ? (
+                  <div className="flex-1 flex items-center justify-between px-3 py-2 bg-emerald-950/15 border border-emerald-500/20 rounded-xl animate-pulse h-[38px]">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                      <span className="text-[11px] font-bold text-emerald-400 tracking-wide">Perekaman Suara Aktif...</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-0.5 h-4">
+                        <span className="w-0.5 bg-emerald-400 animate-bounce h-2" style={{ animationDelay: '0.1s', animationDuration: '0.4s' }}></span>
+                        <span className="w-0.5 bg-emerald-400 animate-bounce h-4" style={{ animationDelay: '0.2s', animationDuration: '0.6s' }}></span>
+                        <span className="w-0.5 bg-emerald-400 animate-bounce h-3" style={{ animationDelay: '0.3s', animationDuration: '0.5s' }}></span>
+                        <span className="w-0.5 bg-emerald-400 animate-bounce h-1" style={{ animationDelay: '0.4s', animationDuration: '0.3s' }}></span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={stopRecording}
+                        className="p-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-all flex items-center justify-center"
+                        title="Hentikan dan Kirim"
+                      >
+                        <Square size={10} fill="white" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        handleSendMessage(e)
+                      }
+                    }}
+                    placeholder={`Tanya ${activeGuideData.name} tentang destinasi wisata...`}
+                    rows={1}
+                    className="flex-1 bg-transparent border-0 resize-none text-xs text-gray-100 placeholder-gray-500 py-2 px-3 focus:outline-none max-h-32 overflow-y-auto font-sans"
+                    style={{ height: '38px' }}
+                  />
+                )}
+
+                {!isRecording && (
+                  <button 
+                    type="button" 
+                    onClick={startRecording}
+                    className="p-2.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
+                    title="Kirim Suara Real-time"
+                  >
+                    <Mic size={16} />
+                  </button>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={!input.trim() && selectedFiles.length === 0}
+                  className={`p-2.5 rounded-xl transition-all ${
+                    input.trim() || selectedFiles.length > 0
+                      ? 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-md shadow-emerald-600/20' 
+                      : 'text-gray-500 cursor-not-allowed'
+                  }`}
+                >
+                  <Send size={14} />
+                </button>
+              </form>
+              <div className="text-center text-[10px] text-gray-600 mt-3">
+                {connectionStatus === 'live' 
+                  ? 'Terhubung dengan API backend Laravel. Percakapan tersimpan di database SQLite.' 
+                  : 'Menjalankan Mode Demo. Konfigurasikan koneksi API di pengaturan jika ingin menggunakan mode Live.'}
+              </div>
+            </footer>
           </div>
-        </footer>
+
+          <div className="w-[360px] h-full p-6 border-l border-white/5 flex flex-col hidden lg:flex shrink-0">
+            <AvatarCanvas modelUrl={activeGuideData.modelUrl} isSpeaking={isSpeaking} />
+          </div>
+          
+        </div>
       </main>
 
       {isSettingsOpen && (
