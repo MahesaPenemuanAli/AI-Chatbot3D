@@ -5,66 +5,128 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ChatSession;
 use App\Models\ChatMessage;
+use App\Models\MessageAttachment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class ChatController extends Controller
 {
-    // Injected system instruction from your Flask app
-    protected const SYSTEM_INSTRUCTION = 'Kamu adalah "HerbaBot", asisten AI yang hangat, ramah, dan sangat ahli dalam dunia minuman tradisional Indonesia (herbal/jamu).
+    protected const SYSTEM_INSTRUCTION = 'Kamu adalah "TripMate AI", asisten AI pemandu pariwisata Indonesia yang hangat, ramah, dan sangat ahli dalam memberikan panduan wisata, sejarah, budaya, kuliner, dan rencana perjalanan (itinerary).
 
 Tugas utama kamu:
-1. Menjawab pertanyaan pengguna tentang minuman tradisional, resepnya, bahan-bahannya, cara pembuatannya, serta manfaat kesehatannya dengan jelas, sopan, dan ramah dalam Bahasa Indonesia yang santun.
-2. Memberikan penjelasan yang informatif, menarik, dan terstruktur. Gunakan format yang cantik (seperti tebal/bold, poin-poin untuk bahan, dan penomoran untuk langkah kerja) agar nyaman dibaca. Jangan menggunakan emoji secara berlebihan untuk menjaga estetika modern.
-3. Selalu siap sedia merekomendasikan minuman tradisional berdasarkan keluhan kesehatan pengguna. Misalnya, jika mereka mengeluh pegal, masuk angin, kembung, atau lelah, rekomendasikan minuman tradisional yang sesuai dari basis data Anda.
-4. Kamu sangat fleksibel: pengguna bisa bertanya dengan gaya bahasa kasual, salah mengetik (typo), atau mencari minuman dengan nama yang mirip. Cukup pahami maksud mereka secara cerdas tanpa menolak atau memaksakan format yang kaku.
-5. Jika pengguna menanyakan hal di luar minuman tradisional, bahan jamu/herbal, atau kesehatan alami, responlah dengan sopan bahwa kamu hanya dikhususkan untuk membantu menjelaskan minuman tradisional dan resepnya, lalu arahkan kembali pembicaraan ke topik jamu tradisional.';
+1. Menjawab pertanyaan pengguna tentang destinasi wisata di Indonesia dengan jelas, sopan, dan ramah.
+2. Memberikan penjelasan yang informatif, menarik, dan terstruktur menggunakan format markdown (seperti tebal/bold, poin-poin untuk daftar, dan penomoran untuk langkah kerja).
+3. Jika pengguna mengunggah gambar atau video destinasi wisata, makanan khas, atau peta, analisislah gambar tersebut dengan cerdas dan berikan informasi kontekstual yang kaya tentang apa yang ada di dalamnya.
+4. Jika pengguna mengirimkan pesan suara, dengarkan dan tanggapi pesan tersebut dengan penuh keramahan.
+5. Selalu rekomendasikan tempat wisata terbaik, kuliner legendaris, tips perjalanan, serta rincian itinerary yang dipersonalisasi berdasarkan preferensi pengguna.';
 
-    /**
-     * Send a message to the AI and get a response.
-     */
     public function sendMessage(Request $request, $sessionId)
     {
         $request->validate([
-            'message' => ['required', 'string'],
+            'message' => ['nullable', 'string'],
             'model' => ['nullable', 'string'],
+            'attachments' => ['nullable', 'array'],
+            'attachments.*' => ['file', 'max:20480'],
         ]);
 
         $user = $request->user();
-        $userMessageText = trim($request->message);
+        $userMessageText = trim($request->message ?? '');
         $selectedModel = $request->model ?? 'gemini-2.5-flash';
 
-        // 1. Get or create the chat session in database
         $chatSession = ChatSession::firstOrCreate(
             ['id' => $sessionId],
             [
                 'user_id' => $user->id,
-                'title' => strlen($userMessageText) > 30 ? substr($userMessageText, 0, 30) . '...' : $userMessageText,
+                'title' => $userMessageText ? (strlen($userMessageText) > 30 ? substr($userMessageText, 0, 30) . '...' : $userMessageText) : 'Unggahan Media Wisata',
                 'model' => $selectedModel,
             ]
         );
 
-        // 2. Save the user message to the database
+        $hasAttachments = $request->hasFile('attachments');
+        $messageType = 'text';
+        if ($hasAttachments) {
+            $messageType = 'multimodal';
+        }
+
         $userMessage = $chatSession->messages()->create([
             'role' => 'user',
+            'message_type' => $messageType,
             'content' => $userMessageText,
         ]);
 
-        // 3. Retrieve chat history from database and format for Gemini API
-        // Gemini expects: [ { "role": "user"|"model", "parts": [ { "text": "..." } ] } ]
-        $historyMessages = $chatSession->messages;
-        $contents = [];
-        foreach ($historyMessages as $msg) {
-            $contents[] = [
-                'role' => $msg->role, // 'user' or 'model'
-                'parts' => [
-                    ['text' => $msg->content]
-                ]
-            ];
+        $attachmentsData = [];
+        if ($hasAttachments) {
+            foreach ($request->file('attachments') as $file) {
+                $path = $file->store('attachments', 'public');
+                $attachmentType = 'image';
+                $mimeType = $file->getMimeType();
+
+                if (str_starts_with($mimeType, 'video/')) {
+                    $attachmentType = 'video';
+                } elseif (str_starts_with($mimeType, 'audio/')) {
+                    $attachmentType = 'audio';
+                }
+
+                $attachment = $userMessage->attachments()->create([
+                    'attachment_type' => $attachmentType,
+                    'file_path' => 'storage/' . $path,
+                    'file_name' => $file->getClientOriginalName(),
+                    'mime_type' => $mimeType,
+                    'file_size' => $file->getSize(),
+                ]);
+
+                $attachmentsData[] = $attachment;
+            }
         }
 
-        // 4. Call Gemini API with fallback and retry logic
+        $historyMessages = $chatSession->messages()->with('attachments')->orderBy('created_at', 'asc')->get();
+        $contents = [];
+
+        foreach ($historyMessages as $msg) {
+            $parts = [];
+            
+            if ($msg->content) {
+                $parts[] = ['text' => $msg->content];
+            }
+
+            if ($msg->id === $userMessage->id) {
+                foreach ($attachmentsData as $att) {
+                    $cleanPath = str_replace('storage/', '', $att->file_path);
+                    if (Storage::disk('public')->exists($cleanPath)) {
+                        $fileData = base64_encode(Storage::disk('public')->get($cleanPath));
+                        $parts[] = [
+                          'inlineData' => [
+                            'mimeType' => $att->mime_type,
+                            'data' => $fileData
+                          ]
+                        ];
+                    }
+                }
+            } else {
+                foreach ($msg->attachments as $att) {
+                    $cleanPath = str_replace('storage/', '', $att->file_path);
+                    if (Storage::disk('public')->exists($cleanPath)) {
+                        $fileData = base64_encode(Storage::disk('public')->get($cleanPath));
+                        $parts[] = [
+                          'inlineData' => [
+                            'mimeType' => $att->mime_type,
+                            'data' => $fileData
+                          ]
+                        ];
+                    }
+                }
+            }
+
+            if (!empty($parts)) {
+                $contents[] = [
+                    'role' => $msg->role === 'assistant' ? 'model' : $msg->role,
+                    'parts' => $parts
+                ];
+            }
+        }
+
         $apiKey = env('GEMINI_API_KEY');
         if (!$apiKey) {
             return response()->json([
@@ -75,28 +137,27 @@ Tugas utama kamu:
         try {
             [$responseText, $usedModel] = $this->generateChatWithFallback($contents, $apiKey);
 
-            // Update session model if different model was used as fallback
             if ($chatSession->model !== $usedModel) {
                 $chatSession->update(['model' => $usedModel]);
             }
 
-            // 5. Save the AI response to the database
             $aiMessage = $chatSession->messages()->create([
                 'role' => 'model',
+                'message_type' => 'text',
                 'content' => $responseText,
             ]);
 
-            // 6. Return response matching frontend structure
             return response()->json([
                 'user_message' => [
                     'id' => $userMessage->id,
                     'role' => 'user',
                     'content' => $userMessage->content,
                     'created_at' => $userMessage->created_at,
+                    'attachments' => $attachmentsData
                 ],
                 'ai_message' => [
                     'id' => $aiMessage->id,
-                    'role' => 'assistant', // Map 'model' to 'assistant' for the React frontend
+                    'role' => 'assistant',
                     'content' => $aiMessage->content,
                     'created_at' => $aiMessage->created_at,
                 ]
@@ -106,17 +167,12 @@ Tugas utama kamu:
             Log::error('Gemini API Integration Error: ' . $e->getMessage());
             
             return response()->json([
-                'response' => 'Maaf, asisten herbal sedang sangat sibuk. Silakan kirim ulang pesan Anda beberapa detik lagi. (Detail: ' . $e->getMessage() . ')',
+                'response' => 'Maaf, asisten pariwisata sedang sangat sibuk. Silakan kirim ulang pesan Anda beberapa detik lagi. (Detail: ' . $e->getMessage() . ')',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
 
-    /**
-     * Tries to generate chat content using gemini-2.5-flash.
-     * If 503 UNAVAILABLE or 429 RATE_LIMIT is hit, it retries with backoff.
-     * If it continues to fail, it tries gemini-2.0-flash and gemini-1.5-flash as fallbacks.
-     */
     protected function generateChatWithFallback(array $contents, string $apiKey): array
     {
         $models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
@@ -152,14 +208,12 @@ Tugas utama kamu:
                         }
                     }
 
-                    // Handle 429 (Rate Limit) or 503 (Service Unavailable) with exponential backoff
                     if ($response->status() === 429 || $response->status() === 503) {
                         Log::warning("Gemini model '{$model}' returned status " . $response->status() . ". Retrying...");
-                        usleep(1500000 * ($attempt + 1)); // 1.5s, then 3.0s
+                        usleep(1500000 * ($attempt + 1));
                         continue;
                     }
 
-                    // Other error, try the next model
                     $lastError = new \Exception("Gemini API Error (Model: {$model}, Status: " . $response->status() . "): " . $response->body());
                     break;
 
@@ -173,9 +227,6 @@ Tugas utama kamu:
         throw $lastError ?: new \Exception("Semua model Gemini sedang mengalami gangguan.");
     }
 
-    /**
-     * List all chat sessions for the authenticated user.
-     */
     public function listSessions(Request $request)
     {
         $sessions = ChatSession::where('user_id', $request->user()->id)
@@ -185,33 +236,36 @@ Tugas utama kamu:
         return response()->json($sessions);
     }
 
-    /**
-     * Get all messages in a specific chat session.
-     */
     public function getSessionMessages(Request $request, $id)
     {
         $session = ChatSession::where('user_id', $request->user()->id)
             ->where('id', $id)
             ->firstOrFail();
 
-        $messages = $session->messages()->orderBy('created_at', 'asc')->get();
+        $messages = $session->messages()->with('attachments')->orderBy('created_at', 'asc')->get();
 
-        // Map roles to match the frontend expectations ('model' -> 'assistant')
         $formattedMessages = $messages->map(function ($msg) {
             return [
                 'id' => $msg->id,
                 'role' => $msg->role === 'model' ? 'assistant' : $msg->role,
                 'content' => $msg->content,
                 'created_at' => $msg->created_at,
+                'attachments' => $msg->attachments->map(function ($att) {
+                    return [
+                        'id' => $att->id,
+                        'attachment_type' => $att->attachment_type,
+                        'file_path' => $att->file_path,
+                        'file_name' => $att->file_name,
+                        'mime_type' => $att->mime_type,
+                        'file_size' => $att->file_size,
+                    ];
+                })
             ];
         });
 
         return response()->json($formattedMessages);
     }
 
-    /**
-     * Delete a specific chat session.
-     */
     public function deleteSession(Request $request, $id)
     {
         $session = ChatSession::where('user_id', $request->user()->id)

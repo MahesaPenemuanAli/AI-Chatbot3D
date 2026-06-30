@@ -1,10 +1,31 @@
-import { useState, useEffect, useRef } from 'react'
-import { 
-  Plus, Trash2, Send, Settings, User, 
-  Sparkles, Paperclip, Mic, LogOut, Globe, Activity, Check, Copy, Lock, AlertCircle, Compass, MapPin, X, Square 
+import { useState, useEffect, useRef, useCallback } from 'react'
+import {
+  Activity,
+  AlertCircle,
+  Calendar,
+  Camera,
+  Check,
+  Compass,
+  Copy,
+  Globe,
+  Lock,
+  LogOut,
+  MapPin,
+  Menu,
+  Mic,
+  Paperclip,
+  Plus,
+  Send,
+  Settings,
+  Share2,
+  Sparkles,
+  Square,
+  Trash2,
+  X
 } from 'lucide-react'
 import './App.css'
 import AvatarCanvas from './components/AvatarCanvas'
+import ErrorBoundary from './components/ErrorBoundary'
 import { WeatherWidget, MapWidget, ItineraryWidget } from './components/TravelWidgets'
 
 const INITIAL_SESSIONS = [
@@ -19,8 +40,8 @@ const INITIAL_MESSAGES = {
     { id: 2, role: 'assistant', content: 'Waktu terbaik untuk berkunjung adalah saat **sunrise (matahari terbit)** sekitar pukul 04.30 WIB atau saat **sunset (matahari terbenam)** sore hari.\n\nSelain udaranya masih sejuk, pemandangan kabut pagi yang menyelimuti lembah di sekitar candi dengan latar belakang Gunung Merapi sangatlah magis dan indah untuk berfoto!' }
   ],
   'session-2': [
-    { id: 1, role: 'user', content: 'Bagaimana cara menuju Pantai Kelingking di Nusa Penida?' },
-    { id: 2, role: 'assistant', content: 'Untuk menuju Pantai Kelingking, berikut rute praktisnya:\n\n1. **Naik Fastboat**: Dari pelabuhan Sanur di Bali menuju Pelabuhan Pelabuhan Buyuk atau Nyuh di Nusa Penida (sekitar 45 menit).\n2. **Sewa Motor/Mobil**: Setibanya di Nusa Penida, Anda bisa menyewa kendaraan. Jarak tempuh ke Pantai Kelingking sekitar 45-60 menit.\n3. **Turun ke Tebing**: Jika ingin turun ke pantai berpasir putihnya, siapkan fisik ekstra karena jalurnya sangat terjal dengan tangga bambu darurat.' }
+    { id: 1, role: 'user', content: 'Ada rekomendasi pantai tenang di Bali?' },
+    { id: 2, role: 'assistant', content: 'Tentu! Jika Anda mencari ketenangan di Bali, saya sangat menyarankan mengunjungi **Pantai Gunung Payung** di Selatan Bali atau **Pantai Bias Tugel** di Padangbai.\n\nKedua pantai ini memiliki pasir putih yang sangat bersih, dikelilingi tebing tinggi, dan relatif sepi dari keramaian turis utama.' }
   ],
   'session-3': [
     { id: 1, role: 'user', content: 'Rekomendasi kuliner wajib di Jogja selain gudeg?' },
@@ -29,27 +50,50 @@ const INITIAL_MESSAGES = {
 }
 
 const GUIDES = [
-  { 
-    id: 'Siti', 
-    name: 'Siti', 
-    role: 'Pemandu Alam & Petualangan', 
-    avatar: '🌴', 
-    modelUrl: 'https://models.readyplayer.me/64b5e612f0e0c3453b3f66a2.glb' 
+  {
+    id: 'Siti',
+    name: 'Siti',
+    initials: 'ST',
+    role: 'Pemandu Alam & Petualangan',
+    specialty: 'Rute alam',
+    accent: 'from-emerald-500 to-cyan-500',
+    modelUrl: 'https://models.readyplayer.me/64b5e612f0e0c3453b3f66a2.glb'
   },
-  { 
-    id: 'Budi', 
-    name: 'Budi', 
-    role: 'Pemandu Sejarah & Budaya', 
-    avatar: '🏛️', 
-    modelUrl: 'https://models.readyplayer.me/64b5e6cf2c2f6d0f507b56a1.glb' 
+  {
+    id: 'Budi',
+    name: 'Budi',
+    initials: 'BD',
+    role: 'Pemandu Sejarah & Budaya',
+    specialty: 'Budaya',
+    accent: 'from-cyan-500 to-sky-500',
+    modelUrl: 'https://models.readyplayer.me/64b5e6cf2c2f6d0f507b56a1.glb'
   },
-  { 
-    id: 'Aditya', 
-    name: 'Aditya', 
-    role: 'Pemandu Kuliner & Rekreasi', 
-    avatar: '🍲', 
-    modelUrl: 'https://models.readyplayer.me/64b5e7392c2f6d0f507b5a83.glb' 
+  {
+    id: 'Aditya',
+    name: 'Aditya',
+    initials: 'AD',
+    role: 'Pemandu Kuliner & Rekreasi',
+    specialty: 'Kuliner',
+    accent: 'from-amber-400 to-orange-500',
+    modelUrl: 'https://models.readyplayer.me/64b5e7392c2f6d0f507b5a83.glb'
   }
+]
+
+const MODEL_OPTIONS = ['Gemini 2.5 Pro', 'Gemini 1.5 Flash', 'Claude 3.5 Sonnet']
+
+const NAV_ACTIONS = [
+  { label: 'Destinasi', icon: MapPin, prompt: 'Tunjukkan destinasi populer di Indonesia' },
+  { label: 'Reservasi', icon: Calendar, prompt: 'Bagaimana cara membuat reservasi hotel dekat pantai?' },
+  { label: 'Promo', icon: Sparkles, prompt: 'Apakah ada promo wisata keluarga akhir pekan ini?' }
+]
+
+const QUICK_ACTIONS = [
+  { label: 'Jelajahi', icon: Compass, prompt: 'Rekomendasikan destinasi terpopuler di Indonesia' },
+  { label: 'Peta', icon: MapPin, prompt: 'Tampilkan peta wisata Bali dan Yogyakarta' },
+  { label: 'Jadwal', icon: Calendar, prompt: 'Tolong tunjukkan jadwal festival budaya terdekat' },
+  { label: 'Suara', icon: Mic, action: 'voice' },
+  { label: 'Foto', icon: Camera, action: 'photo' },
+  { label: 'Bagikan', icon: Share2, action: 'share' }
 ]
 
 function App() {
@@ -57,10 +101,10 @@ function App() {
     const saved = localStorage.getItem('tour_sessions')
     return saved ? JSON.parse(saved) : INITIAL_SESSIONS
   })
-  
+
   const [activeSessionId, setActiveSessionId] = useState(() => {
     const saved = localStorage.getItem('tour_active_session_id')
-    return saved || 'session-1'
+    return saved || 'session-2'
   })
 
   const [messages, setMessages] = useState(() => {
@@ -71,9 +115,9 @@ function App() {
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [selectedModel, setSelectedModel] = useState('Gemini 2.5 Pro')
-  const [selectedGuide, setSelectedGuide] = useState('Siti')
+  const [selectedGuide, setSelectedGuide] = useState('Budi')
   const [backendUrl, setBackendUrl] = useState('http://localhost:8000/api')
-  
+
   const [token, setToken] = useState(() => localStorage.getItem('sanctum_token') || '')
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('user_data')
@@ -81,8 +125,9 @@ function App() {
   })
 
   const [connectionStatus, setConnectionStatus] = useState('sandbox')
-  
+
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [authTab, setAuthTab] = useState('login')
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', password_confirmation: '' })
   const [authError, setAuthError] = useState('')
@@ -91,11 +136,58 @@ function App() {
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState([])
-  
+
   const mediaRecorderRef = useRef(null)
   const audioChunksRef = useRef([])
   const fileInputRef = useRef(null)
   const messagesEndRef = useRef(null)
+
+  const handleLogout = useCallback(async () => {
+    if (token) {
+      try {
+        await fetch(`${backendUrl}/logout`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          }
+        })
+      } catch {}
+    }
+    setToken('')
+    setUser(null)
+    localStorage.removeItem('sanctum_token')
+    localStorage.removeItem('user_data')
+    setConnectionStatus('sandbox')
+  }, [backendUrl, token])
+
+  const checkBackendHealth = useCallback(async () => {
+    try {
+      const headers = { 'Accept': 'application/json' }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+
+      const endpoint = token ? `${backendUrl}/user` : `${backendUrl.replace('/api', '')}`
+      const response = await fetch(endpoint, { method: 'GET', headers })
+
+      if (response.ok) {
+        setConnectionStatus('live')
+        if (token) {
+          const userData = await response.json()
+          setUser(userData)
+          localStorage.setItem('user_data', JSON.stringify(userData))
+        }
+      } else {
+        if (response.status === 401) {
+          handleLogout()
+        }
+        setConnectionStatus('sandbox')
+      }
+    } catch {
+      setConnectionStatus('sandbox')
+    }
+  }, [backendUrl, handleLogout, token])
 
   useEffect(() => {
     localStorage.setItem('tour_sessions', JSON.stringify(sessions))
@@ -114,47 +206,19 @@ function App() {
   }, [messages])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
   }, [messages, activeSessionId, isTyping])
 
   useEffect(() => {
     checkBackendHealth()
-  }, [backendUrl, token])
-
-  const checkBackendHealth = async () => {
-    try {
-      const headers = { 'Accept': 'application/json' }
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`
-      }
-      
-      const endpoint = token ? `${backendUrl}/user` : `${backendUrl.replace('/api', '')}`
-      const response = await fetch(endpoint, { method: 'GET', headers })
-      
-      if (response.ok) {
-        setConnectionStatus('live')
-        if (token) {
-          const userData = await response.json()
-          setUser(userData)
-          localStorage.setItem('user_data', JSON.stringify(userData))
-        }
-      } else {
-        if (response.status === 401) {
-          handleLogout()
-        }
-        setConnectionStatus('sandbox')
-      }
-    } catch (e) {
-      setConnectionStatus('sandbox')
-    }
-  }
+  }, [checkBackendHealth])
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault()
     setAuthError('')
-    
+
     const endpoint = authTab === 'login' ? `${backendUrl}/login` : `${backendUrl}/register`
-    
+
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -183,25 +247,6 @@ function App() {
     }
   }
 
-  const handleLogout = async () => {
-    if (token) {
-      try {
-        await fetch(`${backendUrl}/logout`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json'
-          }
-        })
-      } catch (e) {}
-    }
-    setToken('')
-    setUser(null)
-    localStorage.removeItem('sanctum_token')
-    localStorage.removeItem('user_data')
-    setConnectionStatus('sandbox')
-  }
-
   const handleNewSession = () => {
     const newId = `session-${Date.now()}`
     const newSession = {
@@ -216,13 +261,14 @@ function App() {
       [newId]: []
     })
     setActiveSessionId(newId)
+    setIsSidebarOpen(false)
   }
 
   const handleDeleteSession = (id, e) => {
     e.stopPropagation()
     const updatedSessions = sessions.filter(s => s.id !== id)
     setSessions(updatedSessions)
-    
+
     const updatedMessages = { ...messages }
     delete updatedMessages[id]
     setMessages(updatedMessages)
@@ -237,17 +283,26 @@ function App() {
     }
   }
 
+  const handleGuideSelect = (guideId) => {
+    setSelectedGuide(guideId)
+    if (currentSession) {
+      setSessions(prev => prev.map(session => (
+        session.id === activeSessionId ? { ...session, guide: guideId } : session
+      )))
+    }
+  }
+
   const speakText = (text) => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel()
-      const cleanText = text.replace(/[*#`_\-]/g, '')
+      const cleanText = text.replace(/[*#`_-]/g, '')
       const utterance = new SpeechSynthesisUtterance(cleanText)
       utterance.lang = 'id-ID'
-      
+
       utterance.onstart = () => setIsSpeaking(true)
       utterance.onend = () => setIsSpeaking(false)
       utterance.onerror = () => setIsSpeaking(false)
-      
+
       window.speechSynthesis.speak(utterance)
     }
   }
@@ -267,7 +322,7 @@ function App() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       audioChunksRef.current = []
-      
+
       const mediaRecorder = new MediaRecorder(stream)
       mediaRecorderRef.current = mediaRecorder
 
@@ -280,9 +335,9 @@ function App() {
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
         const audioFile = new File([audioBlob], 'voice_message.wav', { type: 'audio/wav' })
-        
+
         handleSendMessageDirectly('Mengirimkan pesan suara...', [audioFile])
-        
+
         stream.getTracks().forEach(track => track.stop())
       }
 
@@ -314,7 +369,7 @@ function App() {
 
     const currentSessionMessages = messages[activeSessionId] || []
     const updatedSessionMessages = [...currentSessionMessages, userMessage]
-    
+
     setMessages({
       ...messages,
       [activeSessionId]: updatedSessionMessages
@@ -327,7 +382,7 @@ function App() {
         const formData = new FormData()
         formData.append('message', userMsgText)
         formData.append('model', selectedModel)
-        
+
         filesToSend.forEach((file, index) => {
           formData.append(`attachments[${index}]`, file)
         })
@@ -343,7 +398,7 @@ function App() {
 
         if (!response.ok) throw new Error('API gagal merespons')
         const data = await response.json()
-        
+
         setMessages(prev => ({
           ...prev,
           [activeSessionId]: [...updatedSessionMessages, {
@@ -352,7 +407,7 @@ function App() {
             content: data.ai_message.content
           }]
         }))
-        
+
         if (data.ai_message.audio_url) {
           const audio = new Audio(data.ai_message.audio_url)
           audio.onplay = () => setIsSpeaking(true)
@@ -361,7 +416,7 @@ function App() {
         } else {
           speakText(data.ai_message.content)
         }
-        
+
         setIsTyping(false)
         return
       } catch (err) {
@@ -392,7 +447,7 @@ function App() {
           content: replyText
         }]
       }))
-      
+
       speakText(replyText)
       setIsTyping(false)
     }, 1500)
@@ -403,6 +458,22 @@ function App() {
     if (!input.trim() && selectedFiles.length === 0) return
     handleSendMessageDirectly(input.trim())
     setInput('')
+  }
+
+  const handleQuickAction = (item) => {
+    if (item.action === 'voice') {
+      startRecording()
+      return
+    }
+    if (item.action === 'photo') {
+      triggerFileSelect()
+      return
+    }
+    if (item.action === 'share') {
+      alert('Bagikan tautan asisten ini: ' + window.location.href)
+      return
+    }
+    setInput(item.prompt)
   }
 
   const handleCopyCode = (text, id) => {
@@ -435,47 +506,47 @@ function App() {
       widgets.push(<ItineraryWidget key="itinerary" items={mockItinerary} />)
     }
 
-    return widgets.length > 0 ? <div className="mt-4 space-y-2">{widgets}</div> : null
+    return widgets.length > 0 ? <div className="mt-3 space-y-3">{widgets}</div> : null
   }
 
   const renderMessageContent = (content) => {
     const parts = content.split(/(```[\s\S]*?```)/g)
-    
+
     return parts.map((part, index) => {
       if (part.startsWith('```')) {
         const match = part.match(/```(\w*)\n([\s\S]*?)```/)
         const lang = match ? match[1] : ''
         const code = match ? match[2] : part.slice(3, -3)
         const codeId = `${index}-${lang}`
-        
+
         return (
-          <div key={index} className="relative group my-3 rounded-lg overflow-hidden border border-white/5 bg-black/50">
-            <div className="flex justify-between items-center px-4 py-2 bg-white/5 border-b border-white/5 text-[11px] text-emerald-400 font-mono">
+          <div key={index} className="group relative my-2 overflow-hidden rounded-lg border border-slate-200 bg-slate-950 text-slate-100">
+            <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-3 py-2 font-mono text-[10px] text-cyan-200">
               <span>{lang || 'code'}</span>
-              <button 
+              <button
                 onClick={() => handleCopyCode(code, codeId)}
-                className="flex items-center gap-1 hover:text-white transition-colors"
+                className="flex items-center gap-1 rounded-md px-2 py-1 transition hover:bg-white/10 hover:text-white"
               >
                 {copiedId === codeId ? <Check size={11} /> : <Copy size={11} />}
                 {copiedId === codeId ? 'Tersalin' : 'Salin'}
               </button>
             </div>
-            <pre className="m-0 p-4 overflow-x-auto">
-              <code className="text-emerald-300 font-mono text-xs">{code}</code>
+            <pre className="m-0 overflow-x-auto p-3">
+              <code className="font-mono text-[11px] text-emerald-200">{code}</code>
             </pre>
           </div>
         )
       }
 
       return (
-        <p key={index} className="whitespace-pre-wrap leading-relaxed">
+        <p key={index} className="m-0 whitespace-pre-wrap leading-relaxed">
           {part.split('**').map((subPart, subIndex) => {
             if (subIndex % 2 === 1) {
-              return <strong key={subIndex} className="text-emerald-400 font-semibold">{subPart}</strong>
+              return <strong key={subIndex} className="font-semibold text-teal-700">{subPart}</strong>
             }
             return subPart.split('*').map((italicPart, italicIndex) => {
               if (italicIndex % 2 === 1) {
-                return <em key={italicIndex} className="text-cyan-400">{italicPart}</em>
+                return <em key={italicIndex} className="text-cyan-700">{italicPart}</em>
               }
               return italicPart
             })
@@ -488,532 +559,623 @@ function App() {
   const currentSession = sessions.find(s => s.id === activeSessionId)
   const currentMessages = messages[activeSessionId] || []
   const activeGuideData = GUIDES.find(g => g.id === selectedGuide) || GUIDES[0]
+  const userInitial = user?.name?.charAt(0)?.toUpperCase() || 'T'
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#050b0a] text-gray-200">
-      
-      <aside className="w-[300px] bg-[#0a1412] border-r border-white/5 flex flex-col h-full z-10">
-        
-        <div className="p-5 flex items-center justify-between border-b border-white/5">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-emerald-900/40">
-              <Compass size={20} className="text-white animate-spin" style={{ animationDuration: '20s' }} />
+    <div className="tripmate-root relative h-screen w-screen overflow-hidden text-slate-900">
+      <div className="scenic-backdrop absolute inset-0" />
+      <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-emerald-950/25 to-transparent" />
+
+      <div className="relative z-10 flex h-full w-full flex-col overflow-hidden p-3 sm:p-5 lg:p-7">
+        <section className="desktop-shell mx-auto flex min-h-0 w-full max-w-[1480px] flex-1 flex-col overflow-hidden rounded-[24px] border border-white/65 bg-white/45 shadow-[0_28px_90px_rgba(8,47,73,0.22)] backdrop-blur-2xl">
+          <div className="hidden h-12 shrink-0 items-center gap-4 border-b border-white/60 bg-white/70 px-5 sm:flex">
+            <div className="flex items-center gap-2">
+              <span className="h-3 w-3 rounded-full bg-red-400" />
+              <span className="h-3 w-3 rounded-full bg-amber-300" />
+              <span className="h-3 w-3 rounded-full bg-emerald-400" />
             </div>
-            <div className="flex flex-col">
-              <span className="font-bold text-base tracking-wide text-white">NusaGuide</span>
-              <span className="text-[10px] text-emerald-500 font-semibold tracking-wider uppercase">Pemandu Wisata 3D</span>
+            <div className="mx-auto flex h-8 w-full max-w-2xl items-center justify-center rounded-full border border-slate-200 bg-slate-100/80 text-[11px] font-medium text-slate-400">
+              tripmate.ai/travel-assistant
+            </div>
+            <div className="flex items-center gap-2 text-slate-400">
+              <Globe size={16} />
+              <Plus size={17} />
+              <Share2 size={16} />
             </div>
           </div>
-          
-          <button 
-            onClick={handleNewSession}
-            className="p-2 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all group"
-            title="Eksplorasi Baru"
-          >
-            <Plus size={16} className="text-gray-300 group-hover:text-white group-hover:scale-110 transition-all" />
-          </button>
-        </div>
 
-        <div className="p-4 border-b border-white/5">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500 block mb-3">Pilih Pemandu Wisata</span>
-          <div className="grid grid-cols-3 gap-2">
-            {GUIDES.map(guide => (
+          <header className="flex h-[68px] shrink-0 items-center justify-between border-b border-white/55 bg-white/80 px-4 backdrop-blur-xl sm:px-6">
+            <div className="flex min-w-0 items-center gap-3">
               <button
-                key={guide.id}
-                onClick={() => {
-                  setSelectedGuide(guide.id)
-                  if (currentSession) {
-                    const updated = sessions.map(s => s.id === activeSessionId ? { ...s, guide: guide.id } : s)
-                    setSessions(updated)
-                  }
-                }}
-                className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all ${
-                  selectedGuide === guide.id 
-                    ? 'bg-emerald-950/40 border-emerald-500/30 text-white shadow-md shadow-emerald-950/20' 
-                    : 'bg-white/[0.01] border-white/5 text-gray-400 hover:bg-white/[0.03] hover:text-gray-200'
-                }`}
+                type="button"
+                onClick={() => setIsSidebarOpen(true)}
+                className="grid h-10 w-10 place-items-center rounded-lg text-slate-700 transition hover:bg-slate-100"
+                aria-label="Buka menu"
               >
-                <span className="text-xl">{guide.avatar}</span>
-                <span className="text-[10px] font-bold">{guide.name}</span>
+                <Menu size={22} />
               </button>
-            ))}
-          </div>
-        </div>
 
-        <div className="flex-1 overflow-y-auto p-3 space-y-1">
-          <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500 block px-2 mb-2">Destinasi Eksplorasi</span>
-          {sessions.map(session => (
-            <div
-              key={session.id}
-              onClick={() => setActiveSessionId(session.id)}
-              className={`flex items-center justify-between p-3 rounded-xl cursor-pointer group transition-all duration-200 ${
-                activeSessionId === session.id 
-                  ? 'bg-white/[0.03] border border-white/10 text-white' 
-                  : 'text-gray-400 hover:bg-white/[0.01] hover:text-gray-200 border border-transparent'
-              }`}
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <MapPin size={15} className={activeSessionId === session.id ? 'text-emerald-400' : 'text-gray-500'} />
-                <div className="flex flex-col min-w-0">
-                  <span className="text-xs font-semibold truncate">{session.title}</span>
-                  <span className="text-[9px] text-emerald-600 font-medium">Pemandu: {session.guide || 'Siti'}</span>
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-tr from-amber-300 via-cyan-400 to-emerald-500 text-white shadow-lg shadow-cyan-500/20">
+                  <Compass size={24} />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="truncate text-lg font-extrabold tracking-tight text-slate-950 sm:text-xl">TripMate AI</h1>
+                  <p className="hidden text-xs font-medium text-slate-500 sm:block">Chatbot Pariwisata</p>
                 </div>
               </div>
-              
+            </div>
+
+            <nav className="hidden items-center gap-2 md:flex">
+              {NAV_ACTIONS.map(item => {
+                const Icon = item.icon
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => setInput(item.prompt)}
+                    className="flex h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-teal-700"
+                  >
+                    <Icon size={18} />
+                    <span>{item.label}</span>
+                  </button>
+                )
+              })}
+            </nav>
+
+            <div className="flex items-center gap-3">
+              <div className="hidden text-right sm:block">
+                <p className="text-sm font-bold text-slate-900">{user ? user.name : 'Tamu Wisata'}</p>
+                <p className="flex items-center justify-end gap-1 text-[11px] font-semibold text-slate-500">
+                  <span className={`h-2 w-2 rounded-full ${connectionStatus === 'live' ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                  {connectionStatus === 'live' ? 'Mode Live' : 'Mode Demo'}
+                </p>
+              </div>
               <button
-                onClick={(e) => handleDeleteSession(session.id, e)}
-                className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-white/5 text-gray-500 hover:text-red-400 transition-all"
-                title="Hapus"
+                type="button"
+                onClick={() => setIsSettingsOpen(true)}
+                className="grid h-10 w-10 place-items-center rounded-full border border-slate-200 bg-slate-50 text-sm font-bold text-slate-700 shadow-sm transition hover:border-teal-200 hover:text-teal-700"
+                aria-label="Buka pengaturan akun"
               >
-                <Trash2 size={13} />
+                {userInitial}
               </button>
             </div>
-          ))}
-        </div>
+          </header>
 
-        <div className="px-5 py-3 bg-white/[0.01] border-t border-b border-white/5 flex items-center justify-between text-[11px]">
-          <div className="flex items-center gap-1.5 text-gray-400">
-            <Globe size={12} />
-            <span>Koneksi Backend:</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className={`w-2 h-2 rounded-full ${connectionStatus === 'live' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
-            <span className={`font-bold uppercase tracking-wider text-[9px] ${connectionStatus === 'live' ? 'text-emerald-500' : 'text-amber-500'}`}>
-              {connectionStatus === 'live' ? 'Live API' : 'Sandbox'}
-            </span>
-          </div>
-        </div>
+          <main className="relative min-h-0 flex-1 overflow-hidden">
+            <div className="stage-photo absolute inset-0" />
+            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(240,253,250,0.92)_0%,rgba(240,253,250,0.58)_38%,rgba(14,116,144,0.10)_100%)]" />
+            <div className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-teal-950/35 via-teal-900/8 to-transparent" />
+            <div className="sun-glow absolute right-[8%] top-[8%] h-56 w-56 rounded-full bg-amber-200/55 blur-3xl" />
 
-        <div className="p-4 border-t border-white/5 flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-emerald-950/20 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold text-sm">
-              {user ? user.name[0].toUpperCase() : <User size={15} />}
-            </div>
-            <div className="flex flex-col min-w-0">
-              <span className="text-xs font-bold text-white truncate">{user ? user.name : 'Tamu Wisata'}</span>
-              <span className="text-[10px] text-gray-500 truncate">{user ? user.email : 'Mode Demo'}</span>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-1">
-            <button 
-              onClick={() => setIsSettingsOpen(true)}
-              className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-white transition-colors"
-              title="Pengaturan"
-            >
-              <Settings size={15} />
-            </button>
-            {user && (
-              <button 
-                onClick={handleLogout}
-                className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-red-400 transition-colors"
-                title="Keluar"
-              >
-                <LogOut size={15} />
-              </button>
-            )}
-          </div>
-        </div>
-      </aside>
-
-      <main className="flex-1 flex flex-col h-full bg-[#050b0a] relative">
-        
-        <div className="absolute top-[-15%] left-[20%] w-[600px] h-[600px] rounded-full bg-emerald-950/10 blur-[140px] pointer-events-none"></div>
-        <div className="absolute bottom-[-15%] right-[10%] w-[500px] h-[500px] rounded-full bg-cyan-950/10 blur-[140px] pointer-events-none"></div>
-
-        <header className="h-[64px] border-b border-white/5 flex items-center justify-between px-6 bg-[#050b0a]/80 backdrop-blur-md z-10">
-          <div className="flex items-center gap-3">
-            <div className="text-2xl flex items-center gap-2">
-              <span>{activeGuideData.avatar}</span>
-              {isSpeaking && (
-                <span className="flex gap-0.5 items-center h-3">
-                  <span className="w-0.5 bg-emerald-400 animate-bounce h-2" style={{ animationDelay: '0s', animationDuration: '0.4s' }}></span>
-                  <span className="w-0.5 bg-emerald-400 animate-bounce h-3" style={{ animationDelay: '0.1s', animationDuration: '0.5s' }}></span>
-                  <span className="w-0.5 bg-emerald-400 animate-bounce h-1" style={{ animationDelay: '0.2s', animationDuration: '0.3s' }}></span>
-                </span>
-              )}
-            </div>
-            <div className="flex flex-col">
-              <h2 className="text-xs font-bold text-white">{currentSession ? currentSession.title : 'Destinasi Wisata'}</h2>
-              <span className="text-[10px] text-emerald-500 font-medium">Pemandu Aktif: {activeGuideData.name} ({activeGuideData.role})</span>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <select
-              value={selectedModel}
-              onChange={(e) => {
-                setSelectedModel(e.target.value)
-                if (currentSession) {
-                  const updated = sessions.map(s => s.id === activeSessionId ? { ...s, model: e.target.value } : s)
-                  setSessions(updated)
-                }
-              }}
-              className="bg-white/5 border border-white/5 rounded-xl px-3 py-1.5 text-[10px] font-bold text-gray-200 focus:outline-none focus:border-emerald-500 cursor-pointer"
-            >
-              <option value="Gemini 2.5 Pro" className="bg-[#0a1412] text-white">Gemini 2.5 Pro</option>
-              <option value="Gemini 1.5 Flash" className="bg-[#0a1412] text-white">Gemini 1.5 Flash</option>
-              <option value="Claude 3.5 Sonnet" className="bg-[#0a1412] text-white">Claude 3.5 Sonnet</option>
-            </select>
-          </div>
-        </header>
-
-        <div className="flex-1 flex overflow-hidden">
-          
-          <div className="flex-1 flex flex-col h-full overflow-hidden">
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {currentMessages.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center max-w-lg mx-auto text-center space-y-6 animate-fade-in">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-emerald-600 to-cyan-500 flex items-center justify-center shadow-xl shadow-emerald-900/30">
-                    <Compass size={36} className="text-white" />
-                  </div>
-                  <div className="space-y-2">
-                    <h1 className="text-xl font-bold tracking-tight text-white">Halo! Mau Liburan ke Mana Hari Ini?</h1>
-                    <p className="text-xs text-emerald-500/80 font-medium">
-                      Saya {activeGuideData.name}, siap membantu Anda merencanakan perjalanan, merekomendasikan kuliner legendaris, dan menjelaskan sejarah destinasi wisata di Indonesia.
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 w-full mt-4">
-                    <div 
-                      onClick={() => setInput('Bagaimana rencana perjalanan 3 hari terbaik di Bali?')}
-                      className="p-4 rounded-xl bg-white/[0.01] border border-white/5 hover:border-emerald-500/25 hover:bg-white/[0.03] text-left cursor-pointer transition-all duration-200"
-                    >
-                      <h3 className="text-xs font-bold text-emerald-400 mb-1">Rencana Liburan</h3>
-                      <p className="text-[11px] text-gray-400">Rencana itinerary 3 hari mengeksplorasi keindahan alam Bali.</p>
+            <div className="relative z-10 h-full min-h-0">
+              <div className="absolute right-0 top-0 h-full w-full sm:w-[70%] lg:w-[64%]">
+                <ErrorBoundary fallback={
+                  <div className="flex h-full items-center justify-center p-6">
+                    <div className="max-w-xs rounded-lg border border-white/60 bg-white/80 p-5 text-center shadow-xl backdrop-blur">
+                      <div className={`mx-auto mb-3 grid h-12 w-12 place-items-center rounded-lg bg-gradient-to-tr ${activeGuideData.accent} text-sm font-black text-white`}>
+                        {activeGuideData.initials}
+                      </div>
+                      <h3 className="text-sm font-bold text-slate-900">{activeGuideData.name} Offline</h3>
+                      <p className="mt-1 text-xs leading-relaxed text-slate-500">Model 3D belum berhasil dimuat dari jaringan.</p>
+                      <button
+                        type="button"
+                        onClick={() => window.location.reload()}
+                        className="mt-4 rounded-lg bg-teal-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-teal-500"
+                      >
+                        Muat Ulang
+                      </button>
                     </div>
-                    <div 
-                      onClick={() => setInput('Tolong jelaskan sejarah dan misteri di Candi Borobudur')}
-                      className="p-4 rounded-xl bg-white/[0.01] border border-white/5 hover:border-emerald-500/25 hover:bg-white/[0.03] text-left cursor-pointer transition-all duration-200"
-                    >
-                      <h3 className="text-xs font-bold text-cyan-400 mb-1">Sejarah & Budaya</h3>
-                      <p className="text-[11px] text-gray-400">Jelajahi filosofi tingkatan candi Buddha terbesar di dunia.</p>
-                    </div>
+                  </div>
+                }>
+                  <AvatarCanvas modelUrl={activeGuideData.modelUrl} isSpeaking={isSpeaking} />
+                </ErrorBoundary>
+              </div>
+
+              <div className="pointer-events-none absolute left-4 top-4 z-20 hidden max-w-[300px] rounded-lg border border-white/65 bg-white/65 p-3 shadow-lg backdrop-blur-xl lg:block">
+                <div className="flex items-center gap-3">
+                  <div className={`grid h-11 w-11 place-items-center rounded-lg bg-gradient-to-tr ${activeGuideData.accent} text-sm font-black text-white shadow-lg`}>
+                    {activeGuideData.initials}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-extrabold text-slate-900">{activeGuideData.name}</p>
+                    <p className="truncate text-[11px] font-semibold text-slate-500">{activeGuideData.role}</p>
                   </div>
                 </div>
-              ) : (
-                <div className="max-w-3xl mx-auto space-y-6">
-                  {currentMessages.map(msg => (
-                    <div 
-                      key={msg.id} 
-                      className={`flex gap-4 p-4 rounded-2xl border transition-all animate-fade-in ${
-                        msg.role === 'user' 
-                          ? 'bg-emerald-950/10 border-emerald-500/10 ml-12 justify-end' 
-                          : 'bg-white/[0.01] border-white/5 mr-12'
-                      }`}
-                    >
-                      {msg.role !== 'user' && (
-                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-cyan-500 flex items-center justify-center shrink-0 shadow-md">
-                          <Sparkles size={14} className="text-white" />
+              </div>
+
+              <div className="message-scroll absolute bottom-[188px] left-3 right-3 top-4 z-20 overflow-y-auto pr-1 sm:bottom-[172px] sm:left-6 sm:right-auto sm:top-8 sm:w-[min(470px,48vw)] lg:top-24">
+                <div className="flex min-h-full flex-col justify-end gap-3 pb-2">
+                  {currentMessages.length === 0 ? (
+                    <div className="rounded-lg border border-white/70 bg-white/80 p-5 shadow-xl backdrop-blur-xl">
+                      <div className="mb-4 flex items-center gap-3">
+                        <div className={`grid h-11 w-11 place-items-center rounded-lg bg-gradient-to-tr ${activeGuideData.accent} text-sm font-black text-white`}>
+                          {activeGuideData.initials}
                         </div>
-                      )}
-                      
-                      <div className="flex-1 space-y-1.5 min-w-0">
-                        <div className="text-[9px] font-bold tracking-wider text-emerald-600 uppercase">
-                          {msg.role === 'user' ? 'Wisatawan' : activeGuideData.name}
+                        <div>
+                          <h2 className="text-base font-extrabold text-slate-950">Halo, saya {activeGuideData.name}</h2>
+                          <p className="text-xs font-semibold text-slate-500">{activeGuideData.specialty}</p>
                         </div>
-                        <div className="text-xs text-gray-200 overflow-hidden leading-relaxed">
-                          {renderMessageContent(msg.content)}
-                          
+                      </div>
+                      <p className="text-sm leading-relaxed text-slate-600">
+                        Mau kemana hari ini? Saya bisa bantu susun rute, rekomendasi tempat, estimasi cuaca, dan ide perjalanan.
+                      </p>
+                    </div>
+                  ) : (
+                    currentMessages.map(msg => (
+                      <div
+                        key={msg.id}
+                        className={`flex gap-2.5 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        {msg.role !== 'user' && (
+                          <div className={`mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-tr ${activeGuideData.accent} text-[10px] font-black text-white shadow-md`}>
+                            {activeGuideData.initials}
+                          </div>
+                        )}
+
+                        <div
+                          className={`max-w-[86%] rounded-lg px-4 py-3 text-sm leading-relaxed shadow-lg ${
+                            msg.role === 'user'
+                              ? 'rounded-br-sm bg-gradient-to-br from-teal-600 to-cyan-700 text-white shadow-teal-900/15'
+                              : 'rounded-bl-sm border border-white/70 bg-white/92 text-slate-700 shadow-slate-900/10 backdrop-blur-xl'
+                          }`}
+                        >
+                          {msg.role === 'user' ? (
+                            <p className="m-0 whitespace-pre-wrap">{msg.content || 'Mengirim lampiran perjalanan'}</p>
+                          ) : (
+                            renderMessageContent(msg.content)
+                          )}
+
                           {msg.role !== 'user' && renderWidgets(msg.content)}
 
                           {msg.files && msg.files.length > 0 && (
-                            <div className="flex gap-2 mt-3 flex-wrap">
+                            <div className="mt-3 flex flex-wrap gap-2">
                               {msg.files.map((file, i) => (
-                                <div key={i} className="px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/5 text-[10px] text-emerald-400 flex items-center gap-1.5 font-medium">
-                                  <Paperclip size={10} />
-                                  <span>{file.name}</span>
+                                <div
+                                  key={i}
+                                  className={`flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-semibold ${
+                                    msg.role === 'user' ? 'border-white/25 bg-white/15 text-white' : 'border-slate-200 bg-slate-50 text-slate-600'
+                                  }`}
+                                >
+                                  <Paperclip size={11} />
+                                  <span className="max-w-[120px] truncate">{file.name}</span>
                                 </div>
                               ))}
                             </div>
                           )}
                         </div>
                       </div>
-
-                      {msg.role === 'user' && (
-                        <div className="w-8 h-8 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
-                          <User size={14} className="text-emerald-400" />
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    ))
+                  )}
 
                   {isTyping && (
-                    <div className="flex gap-4 p-4 rounded-2xl bg-white/[0.01] border border-white/5 mr-12 max-w-xs animate-pulse">
-                      <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-600 to-cyan-500 flex items-center justify-center shrink-0">
-                        <Sparkles size={14} className="text-white animate-spin" />
+                    <div className="flex justify-start gap-2.5">
+                      <div className={`mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-tr ${activeGuideData.accent} text-[10px] font-black text-white shadow-md`}>
+                        {activeGuideData.initials}
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                      <div className="flex items-center gap-1 rounded-lg rounded-bl-sm border border-white/70 bg-white/90 px-4 py-3 shadow-lg backdrop-blur-xl">
+                        <span className="typing-dot" />
+                        <span className="typing-dot [animation-delay:140ms]" />
+                        <span className="typing-dot [animation-delay:280ms]" />
                       </div>
                     </div>
                   )}
-                  
+
                   <div ref={messagesEndRef} />
                 </div>
-              )}
-            </div>
+              </div>
 
-            <footer className="p-6 border-t border-white/5 bg-[#050b0a]/40 backdrop-blur-md z-10">
-              <input 
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                className="hidden"
-                multiple
-                accept="image/*,video/*"
-              />
+              <div className="absolute bottom-3 left-3 right-3 z-30 sm:bottom-5 sm:left-1/2 sm:max-w-3xl sm:-translate-x-1/2">
+                {selectedFiles.length > 0 && (
+                  <div className="mb-2 flex items-center gap-2 overflow-x-auto rounded-lg border border-white/80 bg-white/90 p-2 shadow-lg backdrop-blur-xl">
+                    {selectedFiles.map((file, idx) => (
+                      <div key={`${file.name}-${idx}`} className="relative grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                        {file.type.startsWith('image/') ? (
+                          <img src={URL.createObjectURL(file)} alt={file.name} className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="text-[9px] font-black uppercase text-teal-700">Vid</div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== idx))}
+                          className="absolute right-0 top-0 grid h-5 w-5 place-items-center rounded-bl-md bg-red-500 text-white"
+                          aria-label="Hapus lampiran"
+                        >
+                          <X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                    <span className="shrink-0 text-xs font-semibold text-slate-500">{selectedFiles.length} file dipilih</span>
+                  </div>
+                )}
 
-              {selectedFiles.length > 0 && (
-                <div className="max-w-3xl mx-auto flex items-center gap-2.5 p-3 bg-white/[0.02] border border-white/5 rounded-2xl mb-3 animate-fade-in">
-                  {selectedFiles.map((file, idx) => (
-                    <div key={idx} className="relative w-12 h-12 rounded-xl overflow-hidden border border-white/10 bg-black/40 flex items-center justify-center shrink-0">
-                      {file.type.startsWith('image/') ? (
-                        <img src={URL.createObjectURL(file)} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="text-[9px] text-emerald-400 font-bold uppercase">Vid</div>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setSelectedFiles(prev => prev.filter((_, i) => i !== idx))}
-                        className="absolute top-0 right-0 bg-red-500/80 hover:bg-red-600 text-white rounded-bl-lg p-0.5 transition-colors"
-                      >
-                        <X size={10} />
-                      </button>
-                    </div>
-                  ))}
-                  <span className="text-[10px] text-gray-500 font-medium ml-1">{selectedFiles.length} File terpilih</span>
-                </div>
-              )}
-
-              <form onSubmit={handleSendMessage} className="max-w-3xl mx-auto relative flex items-end gap-2 bg-white/5 border border-white/5 focus-within:border-emerald-500/30 focus-within:ring-1 focus-within:ring-emerald-500/10 rounded-2xl p-2 transition-all">
-                <button 
-                  type="button" 
-                  onClick={triggerFileSelect}
-                  className="p-2.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
-                  title="Lampirkan Dokumen/Foto Tiket"
-                >
-                  <Paperclip size={16} />
-                </button>
-
-                {isRecording ? (
-                  <div className="flex-1 flex items-center justify-between px-3 py-2 bg-emerald-950/15 border border-emerald-500/20 rounded-xl animate-pulse h-[38px]">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                      <span className="text-[11px] font-bold text-emerald-400 tracking-wide">Perekaman Suara Aktif...</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <div className="flex items-center gap-0.5 h-4">
-                        <span className="w-0.5 bg-emerald-400 animate-bounce h-2" style={{ animationDelay: '0.1s', animationDuration: '0.4s' }}></span>
-                        <span className="w-0.5 bg-emerald-400 animate-bounce h-4" style={{ animationDelay: '0.2s', animationDuration: '0.6s' }}></span>
-                        <span className="w-0.5 bg-emerald-400 animate-bounce h-3" style={{ animationDelay: '0.3s', animationDuration: '0.5s' }}></span>
-                        <span className="w-0.5 bg-emerald-400 animate-bounce h-1" style={{ animationDelay: '0.4s', animationDuration: '0.3s' }}></span>
+                <form onSubmit={handleSendMessage} className="flex min-h-[58px] items-center gap-2 rounded-full border border-white/80 bg-white/95 p-2 shadow-[0_18px_55px_rgba(15,118,110,0.22)] backdrop-blur-xl">
+                  {isRecording ? (
+                    <div className="flex flex-1 items-center justify-between rounded-full bg-teal-50 px-4 py-2">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-teal-600 animate-ping" />
+                        <span className="text-xs font-bold text-teal-800">Merekam Suara...</span>
                       </div>
                       <button
                         type="button"
                         onClick={stopRecording}
-                        className="p-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-all flex items-center justify-center"
-                        title="Hentikan dan Kirim"
+                        className="grid h-9 w-9 place-items-center rounded-full bg-teal-600 text-white transition hover:bg-teal-500"
+                        aria-label="Berhenti merekam"
                       >
-                        <Square size={10} fill="white" />
+                        <Square size={12} fill="white" />
                       </button>
                     </div>
-                  </div>
-                ) : (
-                  <textarea
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        handleSendMessage(e)
-                      }
-                    }}
-                    placeholder={`Tanya ${activeGuideData.name} tentang destinasi wisata...`}
-                    rows={1}
-                    className="flex-1 bg-transparent border-0 resize-none text-xs text-gray-100 placeholder-gray-500 py-2 px-3 focus:outline-none max-h-32 overflow-y-auto font-sans"
-                    style={{ height: '38px' }}
+                  ) : (
+                    <>
+                      <textarea
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault()
+                            handleSendMessage(e)
+                          }
+                        }}
+                        placeholder="Tanya TripMate AI..."
+                        rows={1}
+                        className="h-11 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-4 py-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={startRecording}
+                        className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-slate-500 transition hover:bg-teal-50 hover:text-teal-700"
+                        aria-label="Live voice"
+                      >
+                        <Mic size={19} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={triggerFileSelect}
+                        className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-slate-500 transition hover:bg-cyan-50 hover:text-cyan-700"
+                        aria-label="Ambil foto atau scan"
+                      >
+                        <Camera size={19} />
+                      </button>
+                    </>
+                  )}
+
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    className="hidden"
+                    multiple
+                    accept="image/*,video/*"
                   />
-                )}
 
-                {!isRecording && (
-                  <button 
-                    type="button" 
-                    onClick={startRecording}
-                    className="p-2.5 rounded-xl text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
-                    title="Kirim Suara Real-time"
+                  <button
+                    type="submit"
+                    disabled={!input.trim() && selectedFiles.length === 0}
+                    className={`grid h-11 w-11 shrink-0 place-items-center rounded-full transition ${
+                      input.trim() || selectedFiles.length > 0
+                        ? 'bg-gradient-to-br from-teal-600 to-cyan-600 text-white shadow-lg shadow-teal-700/20 hover:scale-105'
+                        : 'bg-slate-100 text-slate-300'
+                    }`}
+                    aria-label="Kirim pesan"
                   >
-                    <Mic size={16} />
+                    <Send size={18} />
                   </button>
-                )}
+                </form>
 
-                <button
-                  type="submit"
-                  disabled={!input.trim() && selectedFiles.length === 0}
-                  className={`p-2.5 rounded-xl transition-all ${
-                    input.trim() || selectedFiles.length > 0
-                      ? 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-md shadow-emerald-600/20' 
-                      : 'text-gray-500 cursor-not-allowed'
-                  }`}
-                >
-                  <Send size={14} />
-                </button>
-              </form>
-              <div className="text-center text-[10px] text-gray-600 mt-3">
-                {connectionStatus === 'live' 
-                  ? 'Terhubung dengan API backend Laravel. Percakapan tersimpan di database SQLite.' 
-                  : 'Menjalankan Mode Demo. Konfigurasikan koneksi API di pengaturan jika ingin menggunakan mode Live.'}
+                <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
+                  {QUICK_ACTIONS.map(item => {
+                    const Icon = item.icon
+                    return (
+                      <button
+                        key={item.label}
+                        type="button"
+                        onClick={() => handleQuickAction(item)}
+                        className="quick-action h-14 rounded-lg border border-white/55 bg-white/30 px-2 text-xs font-bold text-white shadow-lg backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-white/45"
+                      >
+                        <Icon size={17} className="mx-auto mb-1" />
+                        <span className="block truncate">{item.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-            </footer>
-          </div>
+            </div>
+          </main>
+        </section>
+      </div>
 
-          <div className="w-[360px] h-full p-6 border-l border-white/5 flex flex-col hidden lg:flex shrink-0">
-            <AvatarCanvas modelUrl={activeGuideData.modelUrl} isSpeaking={isSpeaking} />
-          </div>
-          
-        </div>
-      </main>
-
-      {isSettingsOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#0a1412] border border-white/10 rounded-2xl overflow-hidden shadow-2xl animate-fade-in">
-            <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Settings size={16} className="text-emerald-400" />
-                <h3 className="font-bold text-white text-sm">Pengaturan Sistem</h3>
+      {isSidebarOpen && (
+        <div className="fixed inset-0 z-40 flex bg-slate-950/45 backdrop-blur-sm">
+          <aside className="animate-slide-in flex h-full w-[330px] max-w-[86vw] flex-col border-r border-white/10 bg-slate-950/90 text-white shadow-2xl backdrop-blur-xl">
+            <div className="flex items-center justify-between border-b border-white/10 p-5">
+              <div className="flex items-center gap-3">
+                <div className="grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-tr from-amber-300 via-cyan-400 to-emerald-500 text-white">
+                  <Compass size={22} />
+                </div>
+                <div>
+                  <p className="text-sm font-extrabold">Eksplorasi Anda</p>
+                  <p className="text-xs font-medium text-slate-400">{sessions.length} sesi tersimpan</p>
+                </div>
               </div>
-              <button 
-                onClick={() => setIsSettingsOpen(false)}
-                className="text-gray-400 hover:text-white text-sm"
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(false)}
+                className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white"
+                aria-label="Tutup menu"
               >
-                ✕
+                <X size={18} />
               </button>
             </div>
 
-            <div className="p-6 space-y-6">
+            <div className="border-b border-white/10 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Pemandu</span>
+                <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold text-cyan-200">{selectedModel}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {GUIDES.map(guide => (
+                  <button
+                    key={guide.id}
+                    type="button"
+                    onClick={() => handleGuideSelect(guide.id)}
+                    className={`rounded-lg border p-2 text-left transition ${
+                      selectedGuide === guide.id
+                        ? 'border-cyan-300/55 bg-cyan-300/10 text-white shadow-lg shadow-cyan-950/20'
+                        : 'border-white/10 bg-white/[0.03] text-slate-400 hover:bg-white/[0.07]'
+                    }`}
+                  >
+                    <div className={`mb-2 grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-tr ${guide.accent} text-[10px] font-black text-white`}>
+                      {guide.initials}
+                    </div>
+                    <p className="text-xs font-bold">{guide.name}</p>
+                    <p className="truncate text-[10px] text-slate-500">{guide.specialty}</p>
+                  </button>
+                ))}
+              </div>
+
+              <label className="mt-4 block text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Model AI</label>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white outline-none transition focus:border-cyan-300"
+              >
+                {MODEL_OPTIONS.map(model => (
+                  <option key={model} value={model} className="bg-slate-950 text-white">{model}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Destinasi</span>
+                <button
+                  type="button"
+                  onClick={handleNewSession}
+                  className="flex items-center gap-1 rounded-lg bg-teal-500 px-2.5 py-1.5 text-[11px] font-bold text-white transition hover:bg-teal-400"
+                >
+                  <Plus size={13} />
+                  Baru
+                </button>
+              </div>
+
               <div className="space-y-2">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase">URL API Backend</label>
+                {sessions.map(session => (
+                  <div
+                    key={session.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      setActiveSessionId(session.id)
+                      setIsSidebarOpen(false)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setActiveSessionId(session.id)
+                        setIsSidebarOpen(false)
+                      }
+                    }}
+                    className={`group flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left transition ${
+                      activeSessionId === session.id
+                        ? 'border-cyan-300/35 bg-white/10 text-white'
+                        : 'border-white/5 bg-white/[0.03] text-slate-400 hover:bg-white/[0.07]'
+                    }`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <MapPin size={15} className={activeSessionId === session.id ? 'text-cyan-300' : 'text-slate-500'} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-bold">{session.title}</span>
+                        <span className="block truncate text-[10px] text-slate-500">Pemandu: {session.guide || 'Siti'}</span>
+                      </span>
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteSession(session.id, e)}
+                      className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-500 opacity-0 transition hover:bg-red-500/10 hover:text-red-300 group-hover:opacity-100"
+                      aria-label="Hapus sesi"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2 border-t border-white/10 p-4">
+              <button
+                type="button"
+                onClick={() => { setIsSettingsOpen(true); setIsSidebarOpen(false) }}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-bold text-slate-200 transition hover:bg-white/10"
+              >
+                <Settings size={15} />
+                Pengaturan Sistem
+              </button>
+              {user && (
+                <button
+                  type="button"
+                  onClick={() => { handleLogout(); setIsSidebarOpen(false) }}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-300/15 bg-red-500/10 px-3 py-2.5 text-xs font-bold text-red-200 transition hover:bg-red-500/15"
+                >
+                  <LogOut size={15} />
+                  Keluar Akun
+                </button>
+              )}
+            </div>
+          </aside>
+          <button
+            type="button"
+            className="flex-1"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-label="Tutup menu"
+          />
+        </div>
+      )}
+
+      {isSettingsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl border border-white/15 bg-slate-950/95 text-white shadow-2xl backdrop-blur-xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="grid h-9 w-9 place-items-center rounded-lg bg-cyan-400/10 text-cyan-200">
+                  <Settings size={17} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold">Pengaturan Sistem</h3>
+                  <p className="text-[11px] font-medium text-slate-500">API, akun, dan autentikasi</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSettingsOpen(false)}
+                className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white"
+                aria-label="Tutup pengaturan"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-6 p-6">
+              <div className="space-y-2">
+                <label className="block text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">URL API Backend</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={backendUrl}
                     onChange={(e) => setBackendUrl(e.target.value)}
                     placeholder="http://localhost:8000/api"
-                    className="flex-1 bg-white/5 border border-white/5 rounded-xl px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-emerald-500"
+                    className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300"
                   />
                   <button
+                    type="button"
                     onClick={checkBackendHealth}
-                    className="px-3 py-2 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-xs font-semibold text-gray-300 hover:text-white transition-colors flex items-center gap-1"
+                    className="flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-slate-200 transition hover:bg-white/10"
                   >
-                    <Activity size={12} />
+                    <Activity size={13} />
                     Uji
                   </button>
                 </div>
               </div>
 
-              <div className="border-t border-white/5 my-4"></div>
-
               {user ? (
                 <div className="space-y-4">
-                  <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/10 flex items-center gap-3">
-                    <Check size={18} className="text-emerald-500" />
-                    <div>
-                      <div className="text-xs font-bold text-emerald-400">Koneksi Aktif</div>
-                      <div className="text-[10px] text-gray-400">Masuk sebagai {user.name} ({user.email})</div>
+                  <div className="flex items-center gap-3 rounded-lg border border-emerald-300/20 bg-emerald-400/10 p-4">
+                    <Check size={20} className="text-emerald-300" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold text-emerald-100">Koneksi Aktif</div>
+                      <div className="truncate text-xs text-slate-400">Masuk sebagai {user.name} ({user.email})</div>
                     </div>
                   </div>
                   <button
+                    type="button"
                     onClick={handleLogout}
-                    className="w-full py-2 bg-red-600/10 hover:bg-red-600/20 border border-red-600/20 rounded-xl text-xs font-bold text-red-400 hover:text-red-300 transition-colors"
+                    className="w-full rounded-lg border border-red-300/20 bg-red-500/10 px-3 py-2.5 text-xs font-bold text-red-200 transition hover:bg-red-500/15"
                   >
                     Keluar dari Akun
                   </button>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <div className="flex border-b border-white/5">
+                  <div className="grid grid-cols-2 gap-2 rounded-lg bg-white/5 p-1">
                     <button
-                      onClick={() => { setAuthTab('login'); setAuthError(''); }}
-                      className={`flex-1 pb-2 text-xs font-bold border-b-2 transition-all ${
-                        authTab === 'login' ? 'border-emerald-500 text-white' : 'border-transparent text-gray-400'
-                      }`}
+                      type="button"
+                      onClick={() => { setAuthTab('login'); setAuthError('') }}
+                      className={`rounded-md px-3 py-2 text-xs font-bold transition ${authTab === 'login' ? 'bg-white text-slate-950' : 'text-slate-400 hover:text-white'}`}
                     >
-                      Masuk (Sign In)
+                      Masuk
                     </button>
                     <button
-                      onClick={() => { setAuthTab('register'); setAuthError(''); }}
-                      className={`flex-1 pb-2 text-xs font-bold border-b-2 transition-all ${
-                        authTab === 'register' ? 'border-emerald-500 text-white' : 'border-transparent text-gray-400'
-                      }`}
+                      type="button"
+                      onClick={() => { setAuthTab('register'); setAuthError('') }}
+                      className={`rounded-md px-3 py-2 text-xs font-bold transition ${authTab === 'register' ? 'bg-white text-slate-950' : 'text-slate-400 hover:text-white'}`}
                     >
-                      Daftar (Register)
+                      Daftar
                     </button>
                   </div>
 
                   {authError && (
-                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/25 flex items-start gap-2">
-                      <AlertCircle size={15} className="text-red-500 shrink-0 mt-0.5" />
-                      <span className="text-[11px] text-red-400">{authError}</span>
+                    <div className="flex items-start gap-2 rounded-lg border border-red-300/20 bg-red-500/10 p-3">
+                      <AlertCircle size={16} className="mt-0.5 shrink-0 text-red-300" />
+                      <span className="text-xs leading-relaxed text-red-100">{authError}</span>
                     </div>
                   )}
 
                   <form onSubmit={handleAuthSubmit} className="space-y-3">
                     {authTab === 'register' && (
                       <div>
-                        <label className="block text-[9px] text-gray-400 uppercase mb-1">Nama Lengkap</label>
+                        <label className="mb-1 block text-[11px] font-bold text-slate-500">Nama Lengkap</label>
                         <input
                           type="text"
                           required
                           value={authForm.name}
                           onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })}
                           placeholder="Nama Anda"
-                          className="w-full bg-white/5 border border-white/5 rounded-xl px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-emerald-500"
+                          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300"
                         />
                       </div>
                     )}
                     <div>
-                      <label className="block text-[9px] text-gray-400 uppercase mb-1">Email</label>
+                      <label className="mb-1 block text-[11px] font-bold text-slate-500">Email</label>
                       <input
                         type="email"
                         required
                         value={authForm.email}
                         onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
                         placeholder="nama@domain.com"
-                        className="w-full bg-white/5 border border-white/5 rounded-xl px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-emerald-500"
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300"
                       />
                     </div>
                     <div>
-                      <label className="block text-[9px] text-gray-400 uppercase mb-1">Password</label>
+                      <label className="mb-1 block text-[11px] font-bold text-slate-500">Password</label>
                       <input
                         type="password"
                         required
                         value={authForm.password}
                         onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-                        placeholder="••••••••"
-                        className="w-full bg-white/5 border border-white/5 rounded-xl px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-emerald-500"
+                        placeholder="Password"
+                        className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300"
                       />
                     </div>
                     {authTab === 'register' && (
                       <div>
-                        <label className="block text-[9px] text-gray-400 uppercase mb-1">Konfirmasi Password</label>
+                        <label className="mb-1 block text-[11px] font-bold text-slate-500">Konfirmasi Password</label>
                         <input
                           type="password"
                           required
                           value={authForm.password_confirmation}
                           onChange={(e) => setAuthForm({ ...authForm, password_confirmation: e.target.value })}
-                          placeholder="••••••••"
-                          className="w-full bg-white/5 border border-white/5 rounded-xl px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-emerald-500"
+                          placeholder="Konfirmasi password"
+                          className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300"
                         />
                       </div>
                     )}
 
                     <button
                       type="submit"
-                      className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-cyan-500 hover:from-emerald-500 hover:to-cyan-400 text-white rounded-xl font-bold text-xs shadow-lg shadow-emerald-600/10 hover:shadow-emerald-600/20 transition-all flex items-center justify-center gap-2"
+                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-500 px-3 py-2.5 text-xs font-black text-white shadow-lg shadow-cyan-950/25 transition hover:from-teal-400 hover:to-cyan-400"
                     >
-                      <Lock size={12} />
+                      <Lock size={14} />
                       {authTab === 'login' ? 'Masuk' : 'Buat Akun'}
                     </button>
                   </form>
@@ -1023,7 +1185,6 @@ function App() {
           </div>
         </div>
       )}
-
     </div>
   )
 }

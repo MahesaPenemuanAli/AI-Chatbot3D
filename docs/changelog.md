@@ -26,3 +26,28 @@ All notable changes to the AI Chatbot project will be documented here.
 - Coded `MapWidget` to embed interactive Google Maps in a dark-themed container.
 - Coded `ItineraryWidget` to display a vertical timeline of tourist schedules.
 - Integrated all widgets dynamically inside the assistant's message bubble rendering in `App.jsx`.
+
+## [2026-06-30]
+
+### Added
+- Installed and configured **Tailwind CSS v4** and `@tailwindcss/vite` in the React frontend.
+- Prepended `@import "tailwindcss"` and updated CSS imports in `frontend/src/index.css`.
+- Redesigned the entire user interface to match the **TripMate AI** visual specifications:
+  - Added a full-page tropical beach background.
+  - Created a white, modern navigation header with TripMate AI branding, links, and user avatar.
+  - Centered the chat interface within a large glassmorphic container (`backdrop-blur-xl bg-white/5 border-white/25`).
+  - Positioned the 3D avatar on the center-right with a transparent background.
+  - Aligned chat bubbles on the left.
+  - Implemented a pill-shaped bottom input bar with `Live Voice` and `Ambil Foto/Scan` buttons.
+  - Added a row of 5 glassmorphic action cards at the bottom of the container.
+- Implemented a slide-out drawer for managing chat history and active sessions.
+- Added smooth slide-in animations (`@keyframes slideInLeft`) in `index.css`.
+- Created `database/seeders/AvatarSeeder.php` to seed the three default guide characters (Siti, Budi, Aditya) along with their respective model URLs, voice IDs, personality prompts, and animation mappings.
+- Registered `AvatarSeeder` in `DatabaseSeeder.php` and executed `php artisan db:seed` to populate the database.
+- Updated `ChatController.php` to:
+  - Rebrand the assistant's system instruction to **TripMate AI** (tourism guide).
+  - Support file and audio uploads, saving files in `public/attachments` storage and records in the `message_attachments` table.
+  - Convert uploaded attachments to base64 and pass them as `inlineData` parts to the Gemini API for native multimodal processing.
+  - Retrieve and return message attachments in the `getSessionMessages` and `sendMessage` endpoints.
+
+

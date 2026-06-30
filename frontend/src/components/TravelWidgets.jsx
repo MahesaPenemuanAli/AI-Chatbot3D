@@ -1,25 +1,26 @@
-import React from 'react'
-import { Sun, CloudRain, MapPin, Calendar, Clock, Navigation } from 'lucide-react'
+import { Sun, CloudRain, MapPin, CalendarDays } from 'lucide-react'
 
 export function WeatherWidget({ destination }) {
   const isRainy = destination.toLowerCase().includes('jogja') || destination.toLowerCase().includes('yogyakarta')
-  const temp = isRainy ? '27°C' : '30°C'
+  const temp = isRainy ? '27 C' : '30 C'
   const condition = isRainy ? 'Hujan Ringan' : 'Cerah Berawan'
-  
+
   return (
-    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-between my-3 animate-fade-in">
-      <div className="flex flex-col">
-        <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Cuaca Saat Ini</span>
-        <span className="text-sm font-bold text-white mt-0.5">{destination}</span>
-        <span className="text-xs text-gray-400 mt-1">{condition}</span>
-      </div>
-      <div className="flex items-center gap-3">
-        {isRainy ? (
-          <CloudRain className="w-8 h-8 text-cyan-400 animate-bounce" style={{ animationDuration: '3s' }} />
-        ) : (
-          <Sun className="w-8 h-8 text-amber-400 animate-spin" style={{ animationDuration: '12s' }} />
-        )}
-        <span className="text-2xl font-extrabold text-white">{temp}</span>
+    <div className="animate-fade-in rounded-lg border border-slate-200/80 bg-white/70 p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <span className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Cuaca Saat Ini</span>
+          <h3 className="mt-1 truncate text-sm font-extrabold text-slate-900">{destination}</h3>
+          <p className="mt-1 text-xs font-semibold text-slate-500">{condition}</p>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          {isRainy ? (
+            <CloudRain className="h-8 w-8 text-cyan-500" />
+          ) : (
+            <Sun className="h-8 w-8 text-amber-400" />
+          )}
+          <span className="text-2xl font-black text-slate-950">{temp}</span>
+        </div>
       </div>
     </div>
   )
@@ -29,22 +30,22 @@ export function MapWidget({ destination, coordinates }) {
   const mapUrl = `https://maps.google.com/maps?q=${encodeURIComponent(destination)}&t=&z=13&ie=UTF8&iwloc=&output=embed`
 
   return (
-    <div className="rounded-2xl border border-white/5 overflow-hidden my-3 bg-black/30 animate-fade-in">
-      <div className="p-3 bg-white/[0.02] border-b border-white/5 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <MapPin className="w-4 h-4 text-emerald-400" />
-          <span className="text-xs font-bold text-white">{destination}</span>
+    <div className="animate-fade-in overflow-hidden rounded-lg border border-slate-200/80 bg-white/70 shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200/80 bg-white/75 px-3 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <MapPin className="h-4 w-4 shrink-0 text-teal-600" />
+          <span className="truncate text-xs font-extrabold text-slate-900">{destination}</span>
         </div>
-        <span className="text-[9px] text-gray-500 font-mono">{coordinates || 'S: 8.4095, E: 115.1889'}</span>
+        <span className="hidden shrink-0 font-mono text-[9px] text-slate-400 sm:inline">{coordinates || 'S: 8.4095, E: 115.1889'}</span>
       </div>
-      <div className="w-full h-[200px] relative">
-        <iframe 
-          title="Peta Lokasi"
-          src={mapUrl} 
-          className="w-full h-full border-0 grayscale invert opacity-80"
-          allowFullScreen="" 
+      <div className="relative h-[180px] w-full">
+        <iframe
+          title={`Peta ${destination}`}
+          src={mapUrl}
+          className="h-full w-full border-0"
+          allowFullScreen
           loading="lazy"
-        ></iframe>
+        />
       </div>
     </div>
   )
@@ -52,19 +53,21 @@ export function MapWidget({ destination, coordinates }) {
 
 export function ItineraryWidget({ items }) {
   return (
-    <div className="my-4 space-y-4 border-l border-white/10 ml-3.5 pl-5 animate-fade-in">
-      {items.map((item, index) => (
-        <div key={index} className="relative">
-          <div className="absolute -left-[27px] top-1.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border border-[#050b0a] flex items-center justify-center">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#050b0a]"></span>
+    <div className="animate-fade-in rounded-lg border border-slate-200/80 bg-white/70 p-4 shadow-sm">
+      <div className="mb-3 flex items-center gap-2">
+        <CalendarDays className="h-4 w-4 text-teal-600" />
+        <span className="text-xs font-extrabold text-slate-900">Rencana Perjalanan</span>
+      </div>
+      <div className="space-y-4 border-l border-teal-200 pl-4">
+        {items.map((item, index) => (
+          <div key={`${item.time}-${index}`} className="relative">
+            <span className="absolute -left-[23px] top-1.5 h-3 w-3 rounded-full border-2 border-white bg-teal-500 shadow" />
+            <span className="text-[10px] font-black uppercase tracking-[0.16em] text-teal-700">{item.time}</span>
+            <h4 className="mt-0.5 text-xs font-extrabold text-slate-900">{item.title}</h4>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-500">{item.description}</p>
           </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-wider">{item.time}</span>
-            <span className="text-xs font-bold text-white mt-0.5">{item.title}</span>
-            <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">{item.description}</p>
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 }
