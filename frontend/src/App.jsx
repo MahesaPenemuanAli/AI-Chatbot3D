@@ -7,6 +7,8 @@ import {
   Check,
   Compass,
   Copy,
+  Eye,
+  EyeOff,
   Globe,
   Lock,
   LogOut,
@@ -136,6 +138,7 @@ function App() {
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState([])
+  const [isChatVisible, setIsChatVisible] = useState(true)
 
   const mediaRecorderRef = useRef(null)
   const audioChunksRef = useRef([])
@@ -207,7 +210,7 @@ function App() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
-  }, [messages, activeSessionId, isTyping])
+  }, [messages, activeSessionId, isTyping, isChatVisible])
 
   useEffect(() => {
     checkBackendHealth()
@@ -562,29 +565,10 @@ function App() {
   const userInitial = user?.name?.charAt(0)?.toUpperCase() || 'T'
 
   return (
-    <div className="tripmate-root relative h-screen w-screen overflow-hidden text-slate-900">
-      <div className="scenic-backdrop absolute inset-0" />
-      <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-emerald-950/25 to-transparent" />
-
+    <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-slate-100 to-slate-300 text-slate-900">
       <div className="relative z-10 flex h-full w-full flex-col overflow-hidden p-3 sm:p-5 lg:p-7">
-        <section className="desktop-shell mx-auto flex min-h-0 w-full max-w-[1480px] flex-1 flex-col overflow-hidden rounded-[24px] border border-white/65 bg-white/45 shadow-[0_28px_90px_rgba(8,47,73,0.22)] backdrop-blur-2xl">
-          <div className="hidden h-12 shrink-0 items-center gap-4 border-b border-white/60 bg-white/70 px-5 sm:flex">
-            <div className="flex items-center gap-2">
-              <span className="h-3 w-3 rounded-full bg-red-400" />
-              <span className="h-3 w-3 rounded-full bg-amber-300" />
-              <span className="h-3 w-3 rounded-full bg-emerald-400" />
-            </div>
-            <div className="mx-auto flex h-8 w-full max-w-2xl items-center justify-center rounded-full border border-slate-200 bg-slate-100/80 text-[11px] font-medium text-slate-400">
-              tripmate.ai/travel-assistant
-            </div>
-            <div className="flex items-center gap-2 text-slate-400">
-              <Globe size={16} />
-              <Plus size={17} />
-              <Share2 size={16} />
-            </div>
-          </div>
-
-          <header className="flex h-[68px] shrink-0 items-center justify-between border-b border-white/55 bg-white/80 px-4 backdrop-blur-xl sm:px-6">
+        <section className="desktop-shell mx-auto flex min-h-0 w-full max-w-[1480px] flex-1 flex-col overflow-hidden bg-transparent border-none shadow-none">
+          <header className="flex h-[68px] shrink-0 items-center justify-between bg-transparent border-none px-4 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
@@ -600,8 +584,8 @@ function App() {
                   <Compass size={24} />
                 </div>
                 <div className="min-w-0">
-                  <h1 className="truncate text-lg font-extrabold tracking-tight text-slate-950 sm:text-xl">TripMate AI</h1>
-                  <p className="hidden text-xs font-medium text-slate-500 sm:block">Chatbot Pariwisata</p>
+                  <h1 className="truncate text-lg font-extrabold tracking-tight text-slate-950 drop-shadow-[0_1px_3px_rgba(255,255,255,1)] sm:text-xl">TripMate AI</h1>
+                  <p className="hidden text-xs font-medium text-slate-800 drop-shadow-[0_1px_3px_rgba(255,255,255,1)] sm:block">Chatbot Pariwisata</p>
                 </div>
               </div>
             </div>
@@ -624,9 +608,9 @@ function App() {
             </nav>
 
             <div className="flex items-center gap-3">
-              <div className="hidden text-right sm:block">
+              <div className="hidden text-right sm:block drop-shadow-[0_1px_3px_rgba(255,255,255,1)]">
                 <p className="text-sm font-bold text-slate-900">{user ? user.name : 'Tamu Wisata'}</p>
-                <p className="flex items-center justify-end gap-1 text-[11px] font-semibold text-slate-500">
+                <p className="flex items-center justify-end gap-1 text-[11px] font-semibold text-slate-800">
                   <span className={`h-2 w-2 rounded-full ${connectionStatus === 'live' ? 'bg-emerald-500' : 'bg-amber-400'}`} />
                   {connectionStatus === 'live' ? 'Mode Live' : 'Mode Demo'}
                 </p>
@@ -643,11 +627,6 @@ function App() {
           </header>
 
           <main className="relative min-h-0 flex-1 overflow-hidden">
-            <div className="stage-photo absolute inset-0" />
-            <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(240,253,250,0.92)_0%,rgba(240,253,250,0.58)_38%,rgba(14,116,144,0.10)_100%)]" />
-            <div className="absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-teal-950/35 via-teal-900/8 to-transparent" />
-            <div className="sun-glow absolute right-[8%] top-[8%] h-56 w-56 rounded-full bg-amber-200/55 blur-3xl" />
-
             <div className="relative z-10 h-full min-h-0">
               <div className="absolute right-0 top-0 h-full w-full sm:w-[70%] lg:w-[64%]">
                 <ErrorBoundary fallback={
@@ -672,32 +651,32 @@ function App() {
                 </ErrorBoundary>
               </div>
 
-              <div className="pointer-events-none absolute left-4 top-4 z-20 hidden max-w-[300px] rounded-lg border border-white/65 bg-white/65 p-3 shadow-lg backdrop-blur-xl lg:block">
+              <div className="pointer-events-none absolute left-4 top-4 z-20 hidden max-w-[300px] rounded-xl border border-white/20 bg-white/20 p-3 shadow-lg backdrop-blur-md lg:block">
                 <div className="flex items-center gap-3">
                   <div className={`grid h-11 w-11 place-items-center rounded-lg bg-gradient-to-tr ${activeGuideData.accent} text-sm font-black text-white shadow-lg`}>
                     {activeGuideData.initials}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm font-extrabold text-slate-900">{activeGuideData.name}</p>
-                    <p className="truncate text-[11px] font-semibold text-slate-500">{activeGuideData.role}</p>
+                    <p className="text-sm font-extrabold text-slate-900 drop-shadow-[0_1px_3px_rgba(255,255,255,1)]">{activeGuideData.name}</p>
+                    <p className="truncate text-[11px] font-semibold text-slate-800 drop-shadow-[0_1px_3px_rgba(255,255,255,1)]">{activeGuideData.role}</p>
                   </div>
                 </div>
               </div>
 
-              <div className="message-scroll absolute bottom-[188px] left-3 right-3 top-4 z-20 overflow-y-auto pr-1 sm:bottom-[172px] sm:left-6 sm:right-auto sm:top-8 sm:w-[min(470px,48vw)] lg:top-24">
+              <div className={`message-scroll absolute bottom-[188px] left-3 right-3 top-4 z-20 overflow-y-auto pr-1 sm:bottom-[172px] sm:left-6 sm:right-auto sm:top-8 sm:w-[min(470px,48vw)] lg:top-24 ${!isChatVisible ? 'hidden' : ''}`}>
                 <div className="flex min-h-full flex-col justify-end gap-3 pb-2">
                   {currentMessages.length === 0 ? (
-                    <div className="rounded-lg border border-white/70 bg-white/80 p-5 shadow-xl backdrop-blur-xl">
+                    <div className="rounded-xl border border-white/20 bg-white/20 p-5 shadow-lg backdrop-blur-md">
                       <div className="mb-4 flex items-center gap-3">
                         <div className={`grid h-11 w-11 place-items-center rounded-lg bg-gradient-to-tr ${activeGuideData.accent} text-sm font-black text-white`}>
                           {activeGuideData.initials}
                         </div>
                         <div>
-                          <h2 className="text-base font-extrabold text-slate-950">Halo, saya {activeGuideData.name}</h2>
-                          <p className="text-xs font-semibold text-slate-500">{activeGuideData.specialty}</p>
+                          <h2 className="text-base font-extrabold text-slate-950 drop-shadow-[0_1px_3px_rgba(255,255,255,1)]">Halo, saya {activeGuideData.name}</h2>
+                          <p className="text-xs font-semibold text-slate-800 drop-shadow-[0_1px_3px_rgba(255,255,255,1)]">{activeGuideData.specialty}</p>
                         </div>
                       </div>
-                      <p className="text-sm leading-relaxed text-slate-600">
+                      <p className="text-sm font-medium leading-relaxed text-slate-900 drop-shadow-[0_1px_3px_rgba(255,255,255,1)]">
                         Mau kemana hari ini? Saya bisa bantu susun rute, rekomendasi tempat, estimasi cuaca, dan ide perjalanan.
                       </p>
                     </div>
@@ -714,10 +693,10 @@ function App() {
                         )}
 
                         <div
-                          className={`max-w-[86%] rounded-lg px-4 py-3 text-sm leading-relaxed shadow-lg ${
+                          className={`max-w-[86%] rounded-lg px-4 py-3 text-sm leading-relaxed ${
                             msg.role === 'user'
-                              ? 'rounded-br-sm bg-gradient-to-br from-teal-600 to-cyan-700 text-white shadow-teal-900/15'
-                              : 'rounded-bl-sm border border-white/70 bg-white/92 text-slate-700 shadow-slate-900/10 backdrop-blur-xl'
+                              ? 'rounded-br-sm bg-transparent border-none shadow-none text-slate-900 font-medium drop-shadow-[0_1px_3px_rgba(255,255,255,1)]'
+                              : 'rounded-bl-sm bg-transparent border-none shadow-none text-slate-900 font-medium drop-shadow-[0_1px_3px_rgba(255,255,255,1)]'
                           }`}
                         >
                           {msg.role === 'user' ? (
@@ -753,7 +732,7 @@ function App() {
                       <div className={`mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-tr ${activeGuideData.accent} text-[10px] font-black text-white shadow-md`}>
                         {activeGuideData.initials}
                       </div>
-                      <div className="flex items-center gap-1 rounded-lg rounded-bl-sm border border-white/70 bg-white/90 px-4 py-3 shadow-lg backdrop-blur-xl">
+                      <div className="flex items-center gap-1 px-4 py-3 bg-transparent border-none shadow-none drop-shadow-[0_1px_3px_rgba(255,255,255,1)]">
                         <span className="typing-dot" />
                         <span className="typing-dot [animation-delay:140ms]" />
                         <span className="typing-dot [animation-delay:280ms]" />
@@ -789,7 +768,7 @@ function App() {
                   </div>
                 )}
 
-                <form onSubmit={handleSendMessage} className="flex min-h-[58px] items-center gap-2 rounded-full border border-white/80 bg-white/95 p-2 shadow-[0_18px_55px_rgba(15,118,110,0.22)] backdrop-blur-xl">
+                <form onSubmit={handleSendMessage} className="flex min-h-[58px] items-center gap-2 rounded-xl border border-white/20 bg-white/10 p-2 shadow-lg backdrop-blur-md">
                   {isRecording ? (
                     <div className="flex flex-1 items-center justify-between rounded-full bg-teal-50 px-4 py-2">
                       <div className="flex items-center gap-2">
@@ -818,13 +797,13 @@ function App() {
                         }}
                         placeholder="Tanya TripMate AI..."
                         rows={1}
-                        className="h-11 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-4 py-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                        className="h-11 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-4 py-3 text-sm font-medium text-slate-900 drop-shadow-[0_1px_3px_rgba(255,255,255,1)] placeholder:text-slate-700 focus:outline-none"
                       />
 
                       <button
                         type="button"
                         onClick={startRecording}
-                        className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-slate-500 transition hover:bg-teal-50 hover:text-teal-700"
+                        className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-slate-800 drop-shadow-[0_1px_3px_rgba(255,255,255,1)] transition hover:bg-white/20"
                         aria-label="Live voice"
                       >
                         <Mic size={19} />
@@ -833,10 +812,19 @@ function App() {
                       <button
                         type="button"
                         onClick={triggerFileSelect}
-                        className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-slate-500 transition hover:bg-cyan-50 hover:text-cyan-700"
+                        className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-slate-800 drop-shadow-[0_1px_3px_rgba(255,255,255,1)] transition hover:bg-white/20"
                         aria-label="Ambil foto atau scan"
                       >
                         <Camera size={19} />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsChatVisible(!isChatVisible)}
+                        className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-slate-800 drop-shadow-[0_1px_3px_rgba(255,255,255,1)] transition hover:bg-white/20"
+                        aria-label={isChatVisible ? "Sembunyikan Chat" : "Tampilkan Chat"}
+                      >
+                        {isChatVisible ? <EyeOff size={19} /> : <Eye size={19} />}
                       </button>
                     </>
                   )}
@@ -872,7 +860,7 @@ function App() {
                         key={item.label}
                         type="button"
                         onClick={() => handleQuickAction(item)}
-                        className="quick-action h-14 rounded-lg border border-white/55 bg-white/30 px-2 text-xs font-bold text-white shadow-lg backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-white/45"
+                        className="quick-action flex h-14 flex-col items-center justify-center rounded-xl border border-white/20 bg-white/10 px-2 text-xs font-bold text-slate-900 shadow-lg drop-shadow-[0_1px_3px_rgba(255,255,255,1)] backdrop-blur-md transition hover:-translate-y-0.5 hover:bg-white/20"
                       >
                         <Icon size={17} className="mx-auto mb-1" />
                         <span className="block truncate">{item.label}</span>
@@ -887,32 +875,38 @@ function App() {
       </div>
 
       {isSidebarOpen && (
-        <div className="fixed inset-0 z-40 flex bg-slate-950/45 backdrop-blur-sm">
-          <aside className="animate-slide-in flex h-full w-[330px] max-w-[86vw] flex-col border-r border-white/10 bg-slate-950/90 text-white shadow-2xl backdrop-blur-xl">
-            <div className="flex items-center justify-between border-b border-white/10 p-5">
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-slate-900/20 backdrop-blur-sm"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-label="Tutup menu"
+          />
+          <aside className="animate-slide-in fixed left-0 top-0 z-50 flex h-screen w-[330px] max-w-[86vw] flex-col bg-white/95 backdrop-blur-md text-slate-900 shadow-[20px_0_40px_rgba(0,0,0,0.15)] border-r border-slate-200/50">
+            <div className="flex items-center justify-between border-none p-5">
               <div className="flex items-center gap-3">
                 <div className="grid h-10 w-10 place-items-center rounded-lg bg-gradient-to-tr from-amber-300 via-cyan-400 to-emerald-500 text-white">
                   <Compass size={22} />
                 </div>
                 <div>
-                  <p className="text-sm font-extrabold">Eksplorasi Anda</p>
-                  <p className="text-xs font-medium text-slate-400">{sessions.length} sesi tersimpan</p>
+                  <p className="text-sm font-extrabold text-slate-900">Eksplorasi Anda</p>
+                  <p className="text-xs font-medium text-slate-800">{sessions.length} sesi tersimpan</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsSidebarOpen(false)}
-                className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white"
+                className="grid h-9 w-9 place-items-center rounded-lg text-slate-800 transition hover:scale-110"
                 aria-label="Tutup menu"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="border-b border-white/10 p-4">
+            <div className="p-4">
               <div className="mb-3 flex items-center justify-between">
-                <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Pemandu</span>
-                <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold text-cyan-200">{selectedModel}</span>
+                <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-800 drop-shadow-[0_1px_3px_rgba(255,255,255,1)]">Pemandu</span>
+                <span className="rounded-full bg-slate-900/10 px-2 py-1 text-[10px] font-bold text-slate-900 drop-shadow-[0_1px_3px_rgba(255,255,255,1)]">{selectedModel}</span>
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {GUIDES.map(guide => (
@@ -920,36 +914,36 @@ function App() {
                     key={guide.id}
                     type="button"
                     onClick={() => handleGuideSelect(guide.id)}
-                    className={`rounded-lg border p-2 text-left transition ${
+                    className={`rounded-lg p-2 text-left transition ${
                       selectedGuide === guide.id
-                        ? 'border-cyan-300/55 bg-cyan-300/10 text-white shadow-lg shadow-cyan-950/20'
-                        : 'border-white/10 bg-white/[0.03] text-slate-400 hover:bg-white/[0.07]'
+                        ? 'bg-transparent text-slate-900 drop-shadow-[0_1px_3px_rgba(255,255,255,1)] scale-105'
+                        : 'bg-transparent text-slate-700 drop-shadow-[0_1px_3px_rgba(255,255,255,1)] hover:scale-105'
                     }`}
                   >
                     <div className={`mb-2 grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-tr ${guide.accent} text-[10px] font-black text-white`}>
                       {guide.initials}
                     </div>
                     <p className="text-xs font-bold">{guide.name}</p>
-                    <p className="truncate text-[10px] text-slate-500">{guide.specialty}</p>
+                    <p className="truncate text-[10px] opacity-80">{guide.specialty}</p>
                   </button>
                 ))}
               </div>
 
-              <label className="mt-4 block text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Model AI</label>
+              <label className="mt-4 block text-[11px] font-black uppercase tracking-[0.18em] text-slate-800 drop-shadow-[0_1px_3px_rgba(255,255,255,1)]">Model AI</label>
               <select
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
-                className="mt-2 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-white outline-none transition focus:border-cyan-300"
+                className="mt-2 w-full rounded-lg border-none bg-transparent px-3 py-2 text-xs font-semibold text-slate-900 drop-shadow-[0_1px_3px_rgba(255,255,255,1)] outline-none transition"
               >
                 {MODEL_OPTIONS.map(model => (
-                  <option key={model} value={model} className="bg-slate-950 text-white">{model}</option>
+                  <option key={model} value={model} className="bg-white text-slate-900">{model}</option>
                 ))}
               </select>
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
               <div className="mb-3 flex items-center justify-between">
-                <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">Destinasi</span>
+                <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-800 drop-shadow-[0_1px_3px_rgba(255,255,255,1)]">Destinasi</span>
                 <button
                   type="button"
                   onClick={handleNewSession}
@@ -976,17 +970,17 @@ function App() {
                         setIsSidebarOpen(false)
                       }
                     }}
-                    className={`group flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left transition ${
+                    className={`group flex w-full items-center justify-between gap-3 rounded-lg p-3 text-left transition ${
                       activeSessionId === session.id
-                        ? 'border-cyan-300/35 bg-white/10 text-white'
-                        : 'border-white/5 bg-white/[0.03] text-slate-400 hover:bg-white/[0.07]'
+                        ? 'bg-transparent text-slate-900 drop-shadow-[0_1px_3px_rgba(255,255,255,1)] font-bold'
+                        : 'bg-transparent text-slate-700 drop-shadow-[0_1px_3px_rgba(255,255,255,1)] hover:scale-[1.02]'
                     }`}
                   >
                     <span className="flex min-w-0 items-center gap-2">
-                      <MapPin size={15} className={activeSessionId === session.id ? 'text-cyan-300' : 'text-slate-500'} />
+                      <MapPin size={15} className={activeSessionId === session.id ? 'text-teal-700' : 'text-slate-600'} />
                       <span className="min-w-0">
                         <span className="block truncate text-xs font-bold">{session.title}</span>
-                        <span className="block truncate text-[10px] text-slate-500">Pemandu: {session.guide || 'Siti'}</span>
+                        <span className="block truncate text-[10px] opacity-80">Pemandu: {session.guide || 'Siti'}</span>
                       </span>
                     </span>
 
@@ -1003,11 +997,11 @@ function App() {
               </div>
             </div>
 
-            <div className="space-y-2 border-t border-white/10 p-4">
+            <div className="space-y-2 p-4">
               <button
                 type="button"
                 onClick={() => { setIsSettingsOpen(true); setIsSidebarOpen(false) }}
-                className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-xs font-bold text-slate-200 transition hover:bg-white/10"
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-transparent px-3 py-2.5 text-xs font-bold text-slate-900 drop-shadow-[0_1px_3px_rgba(255,255,255,1)] transition hover:scale-[1.02]"
               >
                 <Settings size={15} />
                 Pengaturan Sistem
@@ -1016,7 +1010,7 @@ function App() {
                 <button
                   type="button"
                   onClick={() => { handleLogout(); setIsSidebarOpen(false) }}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-300/15 bg-red-500/10 px-3 py-2.5 text-xs font-bold text-red-200 transition hover:bg-red-500/15"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-transparent px-3 py-2.5 text-xs font-bold text-red-700 drop-shadow-[0_1px_3px_rgba(255,255,255,1)] transition hover:scale-[1.02]"
                 >
                   <LogOut size={15} />
                   Keluar Akun
@@ -1024,13 +1018,7 @@ function App() {
               )}
             </div>
           </aside>
-          <button
-            type="button"
-            className="flex-1"
-            onClick={() => setIsSidebarOpen(false)}
-            aria-label="Tutup menu"
-          />
-        </div>
+        </>
       )}
 
       {isSettingsOpen && (

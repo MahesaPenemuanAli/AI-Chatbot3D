@@ -70,74 +70,8 @@ button:disabled {
   background: rgba(15, 118, 110, 0.42);
 }
 
-.tripmate-root {
-  background:
-    radial-gradient(circle at 18% 12%, rgba(255, 245, 157, 0.64), transparent 24%),
-    radial-gradient(circle at 88% 16%, rgba(125, 211, 252, 0.48), transparent 30%),
-    linear-gradient(135deg, #baf7f1 0%, #d6fff1 46%, #ffe2ac 100%);
-}
-
-.scenic-backdrop {
-  background:
-    linear-gradient(180deg, rgba(224, 255, 249, 0.2), rgba(255, 250, 236, 0.66)),
-    url('https://images.unsplash.com/photo-1537996194471-e657df975ab4?auto=format&fit=crop&w=2400&q=85');
-  background-size: cover;
-  background-position: center;
-  filter: saturate(1.08);
-}
-
-.scenic-backdrop::before,
-.scenic-backdrop::after {
-  content: '';
-  position: absolute;
-  inset: auto;
-  pointer-events: none;
-}
-
-.scenic-backdrop::before {
-  left: -8vw;
-  right: -8vw;
-  bottom: -12vh;
-  height: 34vh;
-  background:
-    radial-gradient(ellipse at 13% 100%, rgba(22, 163, 74, 0.48) 0 24%, transparent 25%),
-    radial-gradient(ellipse at 38% 98%, rgba(5, 150, 105, 0.36) 0 21%, transparent 22%),
-    radial-gradient(ellipse at 76% 100%, rgba(13, 148, 136, 0.42) 0 26%, transparent 27%),
-    linear-gradient(180deg, transparent, rgba(6, 95, 70, 0.45));
-}
-
-.scenic-backdrop::after {
-  right: -6vw;
-  top: 13vh;
-  width: 26vw;
-  height: 44vh;
-  background:
-    linear-gradient(135deg, transparent 0 46%, rgba(15, 118, 110, 0.22) 47% 72%, transparent 73%),
-    linear-gradient(155deg, transparent 0 54%, rgba(255, 255, 255, 0.5) 55% 59%, transparent 60%);
-  opacity: 0.75;
-}
-
 .desktop-shell {
   transform-origin: center;
-}
-
-.stage-photo {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(15, 118, 110, 0.18)),
-    url('https://images.unsplash.com/photo-1518548419970-58e3b4079ab2?auto=format&fit=crop&w=2200&q=85');
-  background-size: cover;
-  background-position: center;
-  filter: saturate(1.05) contrast(1.03);
-}
-
-.stage-photo::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(circle at 74% 44%, rgba(45, 212, 191, 0.24), transparent 24%),
-    linear-gradient(0deg, rgba(8, 47, 73, 0.1), rgba(255, 255, 255, 0.08));
-  backdrop-filter: blur(1px);
 }
 
 .sun-glow {
