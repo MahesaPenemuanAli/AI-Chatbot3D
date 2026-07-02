@@ -91,3 +91,10 @@ graph LR
 1. **Frontend (ReactJS + Vite)**: Communicates with the backend using Axios/Fetch. Handles UI rendering, user input, streaming responses, and chat history visualization.
 2. **Backend (Laravel 13)**: Acts as a stateless RESTful API. Handles authentication (Laravel Sanctum), stores chat history in the database, and communicates with AI models (such as Gemini, OpenAI, or local models).
 3. **Database**: Stores user accounts, chat sessions, and individual messages.
+
+---
+
+## Design Proposal
+
+- [Proposal Perancangan Sistem TripMate AI](proposal-perancangan-sistem.md)
+- [List Pengerjaan Development TripMate AI](list-pengerjaan-development.md)
