@@ -12,7 +12,7 @@ class ChatSession extends Model
     use HasFactory;
 
     protected $fillable = [
-        'id', // Matches frontend session ID
+        'id', 
         'user_id',
         'avatar_id',
         'title',

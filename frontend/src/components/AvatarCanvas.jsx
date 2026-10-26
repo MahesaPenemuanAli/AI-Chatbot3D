@@ -1,326 +1,434 @@
-import { useState, useEffect, useRef } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls } from '@react-three/drei'
+import { Component, useCallback, useEffect, useRef, useState } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import {
+  AnimationMixer, Box3, Euler, Float32BufferAttribute, LoopOnce, LoopRepeat,
+  MathUtils, Mesh, MeshBasicMaterial, Quaternion, SphereGeometry, Vector3,
+} from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { VRMLoaderPlugin } from '@pixiv/three-vrm'
 
-function GlbModel({ url, isSpeaking }) {
-  const [scene, setScene] = useState(null)
-  const [failed, setFailed] = useState(false)
+const MODEL_URL = `${import.meta.env.BASE_URL}models/nusa-robot.glb`
+const wrapperStyle = { position: 'relative', width: '100%', height: '100%', minHeight: 0 }
+
+function disposeModel(scene) {
+  const geometries = new Set()
+  const materials = new Set()
+  scene.traverse((object) => {
+    if (!object.isMesh) return
+    geometries.add(object.geometry)
+    const list = Array.isArray(object.material) ? object.material : [object.material]
+    list.forEach((material) => materials.add(material))
+  })
+  geometries.forEach((geometry) => geometry.dispose())
+  materials.forEach((material) => material.dispose())
+}
+
+// The source character has expressions but no blink or speaking mouth.
+// Add these independently so speech does not distort the whole head.
+function addFaceDetails(scene) {
+  const eyes = scene.getObjectByName('Head_4')
+  if (!eyes?.isMesh) return { eyes: null, mouth: null }
+  const geometry = eyes.geometry
+  const positions = geometry.attributes.position
+  const blink = new Float32Array(positions.count * 3)
+  for (let index = 0; index < positions.count; index += 1) {
+    const z = positions.getZ(index)
+    if (z < 0.0036 && z > -0.0051) blink[index * 3 + 2] = (-0.0005877 - z) * 0.96
+  }
+  const blinkAttribute = new Float32BufferAttribute(blink, 3)
+  blinkAttribute.name = 'NusaBlink'
+  geometry.morphAttributes.position.push(blinkAttribute)
+  if (geometry.morphAttributes.normal) {
+    const normalAttribute = new Float32BufferAttribute(new Float32Array(positions.count * 3), 3)
+    normalAttribute.name = 'NusaBlink'
+    geometry.morphAttributes.normal.push(normalAttribute)
+  }
+  eyes.updateMorphTargets()
+  const mouth = new Mesh(new SphereGeometry(1, 20, 12), new MeshBasicMaterial({ color: '#183b2c' }))
+  mouth.name = 'NusaSpeakingMouth'
+  mouth.position.set(0, -0.0128, -0.0057)
+  mouth.scale.set(0.0025, 0.00045, 0.00036)
+  eyes.parent.add(mouth)
+  return { eyes, mouth }
+}
+
+function Robot({ isSpeaking, isThinking, isListening, greeting, reducedMotion, onReady, onFailure }) {
+  const [rig, setRig] = useState(null)
+  const group = useRef(null)
+  const activeAction = useRef(null)
+  const mode = useRef('idle')
+  const motion = useRef({ reducedMotion, isSpeaking, isThinking, isListening })
+  const smoothed = useRef({ speaking: 0, thinking: 0, listening: 0 })
+  const timing = useRef({ elapsed: 0, nextBlink: 2.4, blinkStart: -10, nextGesture: 2 })
+  const gestureIndex = useRef(0)
+  const offsetQuaternion = useRef(new Quaternion())
+  const offsetEuler = useRef(new Euler())
+  const { pointer, invalidate } = useThree()
 
   useEffect(() => {
-    let disposed = false
-    let loadedScene = null
-    setScene(null)
-    setFailed(false)
-
+    let cancelled = false
+    let loaded = null
     const loader = new GLTFLoader()
-    loader.load(
-      url,
-      (gltf) => {
-        loadedScene = gltf.scene
-        if (disposed) {
-          disposeScene(loadedScene)
-        } else {
-          setScene(loadedScene)
-        }
-      },
-      undefined,
-      (error) => {
-        console.error('Error loading GLB:', error)
-        if (!disposed) setFailed(true)
+    loader.load(MODEL_URL, (gltf) => {
+      if (cancelled) {
+        disposeModel(gltf.scene)
+        return
       }
-    )
-
-    return () => {
-      disposed = true
-      if (loadedScene) disposeScene(loadedScene)
-    }
-  }, [url])
-
-  useFrame((state) => {
-    if (!scene) return
-    const t = state.clock.getElapsedTime()
-    const spine = scene.getObjectByName('Spine')
-    const neck = scene.getObjectByName('Neck')
-    const head = scene.getObjectByName('Head')
-    const leftArm = scene.getObjectByName('LeftArm')
-    const rightArm = scene.getObjectByName('RightArm')
-
-    if (spine) {
-      spine.rotation.y = Math.sin(t * 0.55) * 0.03
-      spine.rotation.x = Math.cos(t * 0.8) * 0.012 + 0.02
-    }
-    if (neck) {
-      neck.rotation.y = Math.sin(t * 0.6) * 0.035
-    }
-    if (head) {
-      head.rotation.y = Math.sin(t * 0.6) * 0.045
-      head.rotation.x = Math.cos(t * 0.52) * 0.02
-    }
-    if (leftArm) {
-      leftArm.rotation.z = -Math.PI / 2.8 + Math.sin(t * 0.65) * 0.03
-    }
-    if (rightArm) {
-      rightArm.rotation.z = Math.PI / 2.8 - Math.sin(t * 0.65) * 0.03
-    }
-
-    scene.traverse((child) => {
-      if (child.isMesh && child.morphTargetDictionary) {
-        const index = child.morphTargetDictionary.mouthOpen || child.morphTargetDictionary.jawOpen
-        if (index !== undefined) {
-          const targetValue = isSpeaking ? (Math.sin(t * 18) * 0.35 + 0.35) : 0
-          child.morphTargetInfluences[index] = targetValue
+      const scene = gltf.scene
+      const materials = new Map()
+      const faces = []
+      scene.traverse((object) => {
+        if (!object.isMesh) return
+        object.frustumCulled = false
+        if (object.morphTargetDictionary) faces.push(object)
+        const recolor = (original) => {
+          if (materials.has(original)) return materials.get(original)
+          const material = original.clone()
+          if (material.name === 'Main') material.color.set('#c8e889')
+          if (material.name === 'Grey') material.color.set('#e6ecdf')
+          if (material.name === 'Black') material.color.set('#173b2c')
+          material.roughness = 0.43
+          material.metalness = 0.06
+          materials.set(original, material)
+          return material
         }
-      }
+        object.material = Array.isArray(object.material)
+          ? object.material.map(recolor)
+          : recolor(object.material)
+      })
+      materials.forEach((_, original) => original.dispose())
+      const faceDetails = addFaceDetails(scene)
+      const restPose = []
+      scene.traverse((object) => {
+        if (object.isBone) restPose.push({
+          bone: object,
+          position: object.position.clone(),
+          quaternion: object.quaternion.clone(),
+          scale: object.scale.clone(),
+        })
+      })
+      const mixer = new AnimationMixer(scene)
+      const actions = Object.fromEntries(gltf.animations.map((sourceClip) => {
+        const clip = sourceClip.clone()
+        clip.tracks = clip.tracks.filter((track) => !track.name.endsWith('.morphTargetInfluences'))
+        return [clip.name, mixer.clipAction(clip)]
+      }))
+      actions.Idle?.play()
+      mixer.update(0)
+      const bounds = new Box3().setFromObject(scene)
+      const size = bounds.getSize(new Vector3())
+      const scale = 3.68 / size.y
+      scene.scale.multiplyScalar(scale)
+      scene.position.y -= bounds.min.y * scale
+      scene.position.y -= 1.77
+      const bones = ['Head', 'UpperArmL', 'LowerArmL', 'UpperArmR', 'LowerArmR']
+        .map((name) => scene.getObjectByName(name))
+        .filter(Boolean)
+        .map((bone) => ({ bone, base: bone.quaternion.clone() }))
+      loaded = { scene, mixer, actions, bones, restPose, faces, ...faceDetails }
+      activeAction.current = actions.Idle
+      setRig(loaded)
+      onReady()
+      invalidate()
+    }, undefined, () => {
+      if (!cancelled) onFailure()
     })
-  })
-
-  if (failed || !scene) {
-    return <FallbackGuide isSpeaking={isSpeaking} />
-  }
-
-  return <primitive object={scene} position={[0.22, -1.2, 0]} scale={1.08} />
-}
-
-function VrmModel({ url, isSpeaking }) {
-  const [vrm, setVrm] = useState(null)
-  const [failed, setFailed] = useState(false)
-
-  useEffect(() => {
-    let disposed = false
-    let loadedVrm = null
-    setVrm(null)
-    setFailed(false)
-    const loader = new GLTFLoader()
-    loader.register((parser) => new VRMLoaderPlugin(parser))
-
-    loader.load(
-      url,
-      (gltf) => {
-        const vrmInstance = gltf.userData.vrm
-        if (vrmInstance) {
-          loadedVrm = vrmInstance
-          vrmInstance.scene.rotation.y = Math.PI
-          if (disposed) {
-            vrmInstance.dispose()
-          } else {
-            setVrm(vrmInstance)
-          }
-        }
-      },
-      undefined,
-      (error) => {
-        console.error('Error loading VRM:', error)
-        if (!disposed) setFailed(true)
-      }
-    )
-
     return () => {
-      disposed = true
-      if (loadedVrm) {
-        loadedVrm.dispose()
+      cancelled = true
+      if (loaded) {
+        loaded.mixer.stopAllAction()
+        loaded.mixer.uncacheRoot(loaded.scene)
+        disposeModel(loaded.scene)
       }
     }
-  }, [url])
+  }, [invalidate, onFailure, onReady])
 
-  useFrame((state) => {
-    if (!vrm) return
-    const t = state.clock.getElapsedTime()
-    vrm.update(state.clock.getDelta())
+  const playAction = useCallback((name, once = false) => {
+    if (!rig?.actions[name]) return
+    const next = rig.actions[name]
+    const previous = activeAction.current
+    if (previous === next && next.isRunning()) return
+    previous?.fadeOut(0.3)
+    next.reset().setEffectiveWeight(1).setEffectiveTimeScale(name === 'Idle' ? 0.8 : 0.86)
+    next.setLoop(once ? LoopOnce : LoopRepeat, once ? 1 : Infinity)
+    next.clampWhenFinished = once
+    next.fadeIn(0.3).play()
+    activeAction.current = next
+  }, [rig])
 
-    const spine = vrm.humanoid.getRawBoneNode('spine')
-    const neck = vrm.humanoid.getRawBoneNode('neck')
-    const head = vrm.humanoid.getRawBoneNode('head')
-
-    if (spine) {
-      spine.rotation.y = Math.sin(t * 0.55) * 0.03
-      spine.rotation.x = Math.cos(t * 0.8) * 0.012 + 0.02
+  // A mode change can interrupt a greeting immediately. Reduced motion settles
+  // the authored Idle pose, including bones which Idle itself does not animate.
+  useEffect(() => {
+    motion.current = { reducedMotion, isSpeaking, isThinking, isListening }
+    if (!rig) return
+    const nextMode = isSpeaking ? 'speaking' : isThinking ? 'thinking' : isListening ? 'listening' : 'idle'
+    if (reducedMotion) {
+      rig.mixer.stopAllAction()
+      rig.restPose.forEach(({ bone, position, quaternion, scale }) => {
+        bone.position.copy(position)
+        bone.quaternion.copy(quaternion)
+        bone.scale.copy(scale)
+      })
+      const idle = rig.actions.Idle
+      idle.reset().stopFading().stopWarping().setLoop(LoopRepeat, Infinity)
+        .setEffectiveWeight(1).setEffectiveTimeScale(0.8).play()
+      rig.mixer.setTime(0)
+      rig.bones.forEach(({ bone, base }) => base.copy(bone.quaternion))
+      rig.faces.forEach((face) => face.morphTargetInfluences.fill(0))
+      if (rig.mouth) rig.mouth.scale.set(0.0025, 0.00045, 0.00036)
+      if (group.current) {
+        group.current.rotation.set(0, -0.12, 0)
+        group.current.position.y = 0
+      }
+      smoothed.current = { speaking: 0, thinking: 0, listening: 0 }
+      activeAction.current = idle
+      mode.current = nextMode
+    } else if (mode.current !== nextMode) {
+      mode.current = nextMode
+      playAction('Idle')
+      timing.current.nextGesture = timing.current.elapsed + 0.25
     }
-    if (neck) {
-      neck.rotation.y = Math.sin(t * 0.6) * 0.035
+    invalidate()
+  }, [rig, reducedMotion, isSpeaking, isThinking, isListening, playAction, invalidate])
+
+  // Register once for this rig. A finished wave must never replace an action
+  // which has already taken over, such as a gesture during a spoken answer.
+  useEffect(() => {
+    if (!rig) return
+    const finish = (event) => {
+      const state = motion.current
+      if (event.action !== rig.actions.Wave || activeAction.current !== event.action) return
+      if (state.reducedMotion || state.isSpeaking || state.isThinking || state.isListening) return
+      playAction('Idle')
     }
-    if (head) {
-      head.rotation.y = Math.sin(t * 0.6) * 0.045
-      head.rotation.x = Math.cos(t * 0.52) * 0.02
+    rig.mixer.addEventListener('finished', finish)
+    return () => rig.mixer.removeEventListener('finished', finish)
+  }, [rig, playAction])
+
+  // Mount and an explicit greeting change are the only greeting triggers.
+  // A greeting requested during a reply is skipped, rather than queued.
+  useEffect(() => {
+    const state = motion.current
+    if (!rig || state.reducedMotion || state.isSpeaking || state.isThinking || state.isListening) return
+    playAction('Wave', true)
+    invalidate()
+  }, [rig, greeting, playAction, invalidate])
+
+  useFrame((_, rawDelta) => {
+    if (!rig || document.hidden) return
+    const delta = Math.min(rawDelta, 0.05)
+    const values = smoothed.current
+    const time = timing.current
+    time.elapsed += delta
+    const t = time.elapsed
+    if (reducedMotion) return
+
+    // Reset additive offsets before advancing animation, preventing pose drift.
+    rig.bones.forEach(({ bone, base }) => bone.quaternion.copy(base))
+    rig.mixer.update(delta)
+    rig.bones.forEach(({ bone, base }) => base.copy(bone.quaternion))
+    values.speaking = MathUtils.damp(values.speaking, isSpeaking ? 1 : 0, 10, delta)
+    values.thinking = MathUtils.damp(values.thinking, isThinking ? 1 : 0, 5, delta)
+    values.listening = MathUtils.damp(values.listening, isListening ? 1 : 0, 5, delta)
+
+    if (isSpeaking && t > time.nextGesture) {
+      const gestures = ['Yes', 'ThumbsUp', 'Idle']
+      playAction(gestures[gestureIndex.current % gestures.length])
+      gestureIndex.current += 1
+      time.nextGesture = t + 3.8 + Math.random() * 1.4
+    }
+    if (group.current) {
+      group.current.rotation.y = MathUtils.damp(group.current.rotation.y, -0.13 + pointer.x * 0.13 + Math.sin(t * 0.42) * 0.025, 3, delta)
+      group.current.rotation.z = MathUtils.damp(group.current.rotation.z, Math.sin(t * 0.65) * 0.012 + values.thinking * 0.035, 4, delta)
+      group.current.position.y = Math.sin(t * 1.35) * 0.025
     }
 
-    const mouthValue = isSpeaking ? (Math.sin(t * 18) * 0.35 + 0.35) : 0
-    if (vrm.expressionManager) {
-      vrm.expressionManager.setValue('aa', mouthValue)
-      vrm.expressionManager.update()
-    } else if (vrm.blendShapeProxy) {
-      vrm.blendShapeProxy.setValue('A', mouthValue)
-      vrm.blendShapeProxy.update()
+    rig.bones.forEach(({ bone }) => {
+      let x = 0
+      let y = 0
+      let z = 0
+      if (bone.name === 'Head') {
+        x = -pointer.y * 0.055 + values.speaking * Math.sin(t * 3.8) * 0.045 + values.listening * 0.045
+        y = pointer.x * 0.12 + values.thinking * Math.sin(t * 0.9) * 0.08
+        z = values.thinking * 0.12 + values.listening * 0.05
+      }
+      if (bone.name === 'UpperArmL') z = values.speaking * (0.1 + Math.sin(t * 2.1) * 0.045)
+      if (bone.name === 'LowerArmL') x = values.speaking * Math.sin(t * 2.6) * 0.12
+      if (bone.name === 'UpperArmR') z = -values.thinking * 0.2
+      if (bone.name === 'LowerArmR') x = values.thinking * 0.35
+      offsetEuler.current.set(x, y, z)
+      offsetQuaternion.current.setFromEuler(offsetEuler.current)
+      bone.quaternion.multiply(offsetQuaternion.current)
+    })
+
+    if (t > time.nextBlink) {
+      time.blinkStart = t
+      time.nextBlink = t + 3.2 + Math.random() * 3.6
+    }
+    const blinkPhase = (t - time.blinkStart) / 0.16
+    const blink = blinkPhase >= 0 && blinkPhase <= 1 ? Math.sin(blinkPhase * Math.PI) : 0
+    if (rig.eyes) rig.eyes.morphTargetInfluences[rig.eyes.morphTargetDictionary.NusaBlink] = blink
+    rig.faces.forEach((face) => {
+      const surprise = face.morphTargetDictionary.Surprised
+      const angry = face.morphTargetDictionary.Angry
+      const sad = face.morphTargetDictionary.Sad
+      if (surprise !== undefined) face.morphTargetInfluences[surprise] = values.listening * 0.2 + values.thinking * 0.06
+      if (angry !== undefined) face.morphTargetInfluences[angry] = 0
+      if (sad !== undefined) face.morphTargetInfluences[sad] = 0
+    })
+    if (rig.mouth) {
+      const syllable = 0.5 + Math.sin(t * 18) * 0.32 + Math.sin(t * 29) * 0.18
+      rig.mouth.scale.z = 0.00036 + values.speaking * Math.max(0, syllable) * 0.0013
+      rig.mouth.scale.x = 0.0025 - values.speaking * syllable * 0.00055
     }
   })
 
-  if (failed || !vrm) {
-    return <FallbackGuide isSpeaking={isSpeaking} />
-  }
-
-  return <primitive object={vrm.scene} position={[0.22, -1.2, 0]} scale={1.08} />
+  return rig ? <group ref={group}><primitive object={rig.scene} /></group> : null
 }
 
-function ModelSelector({ url, isSpeaking }) {
-  const isVrm = url.toLowerCase().endsWith('.vrm')
-
-  if (isVrm) {
-    return <VrmModel url={url} isSpeaking={isSpeaking} />
-  }
-  return <GlbModel url={url} isSpeaking={isSpeaking} />
+function WebGLContextGuard({ onFailure }) {
+  const { gl } = useThree()
+  useEffect(() => {
+    const canvas = gl.domElement
+    let active = true
+    let pending
+    const onLost = (event) => {
+      event.preventDefault()
+      // Normal Canvas disposal also loses its context. Wait until React has
+      // cleaned up, then show a fallback only for a still-mounted canvas.
+      window.clearTimeout(pending)
+      pending = window.setTimeout(() => {
+        if (active && canvas.isConnected) onFailure()
+      }, 250)
+    }
+    const onRestored = () => window.clearTimeout(pending)
+    canvas.addEventListener('webglcontextlost', onLost)
+    canvas.addEventListener('webglcontextrestored', onRestored)
+    return () => {
+      active = false
+      window.clearTimeout(pending)
+      canvas.removeEventListener('webglcontextlost', onLost)
+      canvas.removeEventListener('webglcontextrestored', onRestored)
+    }
+  }, [gl, onFailure])
+  return null
 }
 
-function disposeScene(scene) {
-  scene.traverse((child) => {
-    if (!child.isMesh) return
-    child.geometry?.dispose?.()
-    if (Array.isArray(child.material)) {
-      child.material.forEach(material => material.dispose?.())
-    } else {
-      child.material?.dispose?.()
-    }
-  })
+function CanvasUnavailable({ onFailure, isSpeaking }) {
+  useEffect(() => { onFailure() }, [onFailure])
+  return <FriendlyFallback isSpeaking={isSpeaking} />
 }
 
-function StageEffects({ isSpeaking }) {
-  const orbitRef = useRef(null)
-  const ringRef = useRef(null)
-  const dotARef = useRef(null)
-  const dotBRef = useRef(null)
-
-  useFrame((state) => {
-    const t = state.clock.getElapsedTime()
-    if (orbitRef.current) orbitRef.current.rotation.y = t * 0.22
-    if (ringRef.current) {
-      ringRef.current.rotation.z = Math.sin(t * 0.35) * 0.12
-      ringRef.current.scale.setScalar(isSpeaking ? 1.03 + Math.sin(t * 4) * 0.015 : 1)
-    }
-    if (dotARef.current) {
-      dotARef.current.position.y = 0.64 + Math.sin(t * 1.4) * 0.06
-      dotARef.current.rotation.y = t * 0.8
-    }
-    if (dotBRef.current) {
-      dotBRef.current.position.y = -0.02 + Math.cos(t * 1.2) * 0.05
-      dotBRef.current.rotation.y = -t * 0.7
-    }
-  })
-
+function SoftStage({ compact }) {
   return (
-    <group position={[0.15, -0.28, -0.22]}>
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0.08, -0.63, 0]} scale={[1.15, 1.15, 1]}>
-        <torusGeometry args={[0.74, 0.012, 16, 120]} />
-        <meshBasicMaterial color="#5eead4" transparent opacity={0.48} />
+    <group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.79, 0]} scale={[1, 0.68, 1]}>
+        <circleGeometry args={[compact ? 1.06 : 1.25, 64]} />
+        <meshBasicMaterial color="#6c9268" transparent opacity={0.1} depthWrite={false} />
       </mesh>
-      <mesh ref={ringRef} rotation={[Math.PI / 2.25, 0, 0.18]} position={[0.08, -0.22, -0.06]}>
-        <torusGeometry args={[0.88, 0.007, 16, 144]} />
-        <meshBasicMaterial color="#fbbf24" transparent opacity={0.52} />
-      </mesh>
-      <group ref={orbitRef}>
-        <mesh ref={dotARef} position={[0.92, 0.64, 0]}>
-          <sphereGeometry args={[0.055, 24, 24]} />
-          <meshStandardMaterial color="#22d3ee" emissive="#0e7490" emissiveIntensity={0.75} roughness={0.32} />
-        </mesh>
-        <mesh ref={dotBRef} position={[-0.84, -0.02, 0]}>
-          <sphereGeometry args={[0.038, 20, 20]} />
-          <meshStandardMaterial color="#f59e0b" emissive="#92400e" emissiveIntensity={0.65} roughness={0.36} />
-        </mesh>
-      </group>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0.08, -0.72, 0]} scale={[1.4, 0.45, 1]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1.785, 0]} scale={[1, 0.68, 1]}>
         <circleGeometry args={[0.74, 64]} />
-        <meshBasicMaterial color="#0f766e" transparent opacity={0.16} />
+        <meshBasicMaterial color="#49653c" transparent opacity={0.08} depthWrite={false} />
       </mesh>
     </group>
   )
 }
 
-function FallbackGuide({ isSpeaking }) {
-  const groupRef = useRef(null)
-  const headRef = useRef(null)
-
-  useFrame((state) => {
-    const t = state.clock.getElapsedTime()
-    if (groupRef.current) {
-      groupRef.current.position.y = -0.25 + Math.sin(t * 1.1) * 0.035
-      groupRef.current.rotation.y = Math.sin(t * 0.55) * 0.12
-    }
-    if (headRef.current) {
-      const pulse = isSpeaking ? 1 + Math.sin(t * 12) * 0.025 : 1
-      headRef.current.scale.setScalar(pulse)
-    }
-  })
-
+function FriendlyFallback({ loading = false, isSpeaking = false }) {
   return (
-    <group ref={groupRef} position={[0.2, -0.25, 0]} scale={1.08}>
-      <mesh position={[0, -0.42, 0]}>
-        <cylinderGeometry args={[0.26, 0.34, 0.72, 32]} />
-        <meshStandardMaterial color="#0891b2" roughness={0.45} metalness={0.05} />
-      </mesh>
-      <mesh ref={headRef} position={[0, 0.12, 0]}>
-        <sphereGeometry args={[0.26, 32, 32]} />
-        <meshStandardMaterial color="#f8c7a5" roughness={0.52} />
-      </mesh>
-      <mesh position={[0, 0.34, 0.02]} scale={[1.05, 0.45, 0.9]}>
-        <sphereGeometry args={[0.22, 32, 16]} />
-        <meshStandardMaterial color="#3b2416" roughness={0.5} />
-      </mesh>
-      <mesh position={[-0.16, 0.14, 0.23]}>
-        <sphereGeometry args={[0.025, 16, 16]} />
-        <meshBasicMaterial color="#1f2937" />
-      </mesh>
-      <mesh position={[0.16, 0.14, 0.23]}>
-        <sphereGeometry args={[0.025, 16, 16]} />
-        <meshBasicMaterial color="#1f2937" />
-      </mesh>
-      <mesh position={[0, 0.03, 0.245]} scale={[1.4, 0.5, 0.4]}>
-        <sphereGeometry args={[0.035, 16, 16]} />
-        <meshBasicMaterial color={isSpeaking ? '#be123c' : '#7f1d1d'} />
-      </mesh>
-      <mesh position={[-0.33, -0.35, 0]} rotation={[0, 0, -0.45]}>
-        <cylinderGeometry args={[0.045, 0.055, 0.54, 18]} />
-        <meshStandardMaterial color="#f8c7a5" roughness={0.55} />
-      </mesh>
-      <mesh position={[0.33, -0.35, 0]} rotation={[0, 0, 0.45]}>
-        <cylinderGeometry args={[0.045, 0.055, 0.54, 18]} />
-        <meshStandardMaterial color="#f8c7a5" roughness={0.55} />
-      </mesh>
-    </group>
-  )
-}
-
-export default function AvatarCanvas({ modelUrl, isSpeaking }) {
-  const defaultUrl = 'https://models.readyplayer.me/64b5e612f0e0c3453b3f66a2.glb'
-  const activeUrl = modelUrl || defaultUrl
-
-  return (
-    <div className="relative h-full w-full">
-      <Canvas
-        camera={{ position: [0.05, 0.08, 2.35], fov: 34 }}
-        dpr={[1, 1.8]}
-        gl={{ antialias: true, alpha: true }}
-        style={{ width: '100%', height: '100%' }}
-      >
-        <ambientLight intensity={1.65} />
-        <directionalLight position={[2.5, 4.2, 3]} intensity={2.1} />
-        <spotLight position={[-2.5, 3, 2]} angle={0.5} penumbra={0.7} intensity={1.2} color="#bae6fd" />
-        <pointLight position={[0, 1.2, 1.4]} intensity={1.4} color="#fef3c7" />
-
-        <StageEffects isSpeaking={isSpeaking} />
-
-        <ModelSelector url={activeUrl} isSpeaking={isSpeaking} />
-
-        <OrbitControls
-          enablePan={false}
-          enableZoom
-          autoRotate
-          autoRotateSpeed={0.28}
-          minDistance={1.35}
-          maxDistance={3.1}
-          minPolarAngle={Math.PI / 3.4}
-          maxPolarAngle={Math.PI / 1.75}
-          target={[0.2, -0.2, 0]}
-        />
-      </Canvas>
+    <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
+      <svg viewBox="0 0 260 300" width="75%" height="85%" aria-hidden="true">
+        <ellipse cx="130" cy="274" rx="67" ry="10" fill="#183b2c" opacity=".08" />
+        <rect x="79" y="161" width="102" height="89" rx="37" fill="#badc83" />
+        <rect x="65" y="53" width="130" height="120" rx="46" fill="#c8e889" />
+        <rect x="77" y="72" width="106" height="72" rx="29" fill="#edf3df" />
+        <ellipse cx="106" cy="106" rx="8" ry="12" fill="#183b2c" />
+        <ellipse cx="153" cy="106" rx="8" ry="12" fill="#183b2c" />
+        <path d="M119 129Q130 137 141 129" fill="none" stroke="#183b2c" strokeWidth={isSpeaking ? 6 : 3} strokeLinecap="round" />
+        <rect x="50" y="174" width="28" height="66" rx="14" fill="#c8e889" transform="rotate(14 64 205)" />
+        <rect x="182" y="155" width="28" height="66" rx="14" fill="#c8e889" transform="rotate(-28 196 188)" />
+        <rect x="89" y="236" width="32" height="31" rx="13" fill="#dfe7d6" />
+        <rect x="139" y="236" width="32" height="31" rx="13" fill="#dfe7d6" />
+        <circle cx="130" cy="192" r="10" fill="#edf3df" />
+        <path d="M130 53V36" stroke="#98b16b" strokeWidth="6" strokeLinecap="round" />
+        <circle cx="130" cy="30" r="8" fill="#d5f66c" />
+      </svg>
+      {loading && <span style={{ position: 'absolute', bottom: '5%', fontSize: 11, color: '#57705b', background: '#ffffffbb', borderRadius: 30, padding: '7px 13px' }}>Menyiapkan Nusa…</span>}
     </div>
   )
 }
+
+class AvatarErrorBoundary extends Component {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  render() { return this.state.failed ? this.props.fallback : this.props.children }
+}
+
+export default function AvatarCanvas({
+  isSpeaking = false,
+  isThinking = false,
+  isListening = false,
+  greeting = 0,
+  className = '',
+  compact = false,
+  reducedMotion: requestedReducedMotion,
+}) {
+  const root = useRef(null)
+  const [ready, setReady] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [visible, setVisible] = useState(true)
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  const reducedMotion = requestedReducedMotion ?? prefersReducedMotion
+  const onReady = useRef(() => setReady(true)).current
+  const onFailure = useRef(() => setFailed(true)).current
+
+  useEffect(() => {
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const onPreference = (event) => setPrefersReducedMotion(event.matches)
+    preference.addEventListener('change', onPreference)
+    let inViewport = true
+    const onVisibility = () => setVisible(inViewport && !document.hidden)
+    const observer = new IntersectionObserver(([entry]) => {
+      inViewport = entry.isIntersecting
+      onVisibility()
+    }, { rootMargin: '120px' })
+    if (root.current) observer.observe(root.current)
+    document.addEventListener('visibilitychange', onVisibility)
+    onVisibility()
+    return () => {
+      preference.removeEventListener('change', onPreference)
+      document.removeEventListener('visibilitychange', onVisibility)
+      observer.disconnect()
+    }
+  }, [])
+
+  const status = isSpeaking ? 'sedang berbicara' : isThinking ? 'sedang berpikir' : isListening ? 'sedang mendengarkan' : 'siap menemani'
+  const fallback = <FriendlyFallback isSpeaking={isSpeaking} />
+  return (
+    <div ref={root} className={`nusa-avatar ${className}`} style={wrapperStyle} role="img" aria-label={`Avatar 3D Nusa, ${status}`} data-avatar-state={isSpeaking ? 'speaking' : isThinking ? 'thinking' : isListening ? 'listening' : 'idle'}>
+      {failed ? fallback : <AvatarErrorBoundary fallback={fallback}>
+        {!ready && <FriendlyFallback loading />}
+        <Canvas
+          camera={{ position: [0, 0.2, compact ? 7.2 : 7.4], fov: 33 }}
+          dpr={[1, 1.65]}
+          frameloop={!visible || reducedMotion ? 'demand' : 'always'}
+          gl={{ antialias: true, alpha: true, powerPreference: 'low-power' }}
+          style={{ width: '100%', height: '100%', opacity: ready ? 1 : 0, transition: 'opacity 0.5s ease', position: 'relative' }}
+          fallback={<CanvasUnavailable onFailure={onFailure} isSpeaking={isSpeaking} />}
+          onCreated={({ gl, camera }) => {
+            camera.lookAt(0, 0.06, 0)
+            gl.setClearColor('#000000', 0)
+          }}
+        >
+          <ambientLight intensity={1.85} />
+          <hemisphereLight args={['#fffaf0', '#8a9f76', 1.5]} />
+          <directionalLight position={[-3, 5, 6]} intensity={3.2} color="#fffaf1" />
+          <directionalLight position={[4, 2, -3]} intensity={2.8} color="#e9f9c6" />
+          <WebGLContextGuard onFailure={onFailure} />
+          <SoftStage compact={compact} />
+          <Robot isSpeaking={isSpeaking} isThinking={isThinking} isListening={isListening} greeting={greeting} reducedMotion={reducedMotion} onReady={onReady} onFailure={onFailure} />
+        </Canvas>
+      </AvatarErrorBoundary>}
+    </div>
+  )
+}
+

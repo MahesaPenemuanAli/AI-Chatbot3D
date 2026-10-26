@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Storage;
 
 class ChatController extends Controller
 {
-    protected const SYSTEM_INSTRUCTION = 'Kamu adalah "TripMate AI", asisten AI pemandu pariwisata Indonesia yang hangat, ramah, dan sangat ahli dalam memberikan panduan wisata, sejarah, budaya, kuliner, dan rencana perjalanan (itinerary).
+    protected const SYSTEM_INSTRUCTION = 'Kamu adalah "Nusa AI", teman perjalanan virtual dan asisten AI pemandu pariwisata Indonesia yang hangat, ramah, dan sangat ahli dalam memberikan panduan wisata, sejarah, budaya, kuliner, dan rencana perjalanan (itinerary).
 
 Tugas utama kamu:
 1. Menjawab pertanyaan pengguna tentang destinasi wisata di Indonesia dengan jelas, sopan, dan ramah.
@@ -43,6 +43,9 @@ Tugas utama kamu:
                 'model' => $selectedModel,
             ]
         );
+
+        // A caller-supplied session ID must never grant access to another user's chat.
+        abort_unless((string) $chatSession->user_id === (string) $user->id, 404);
 
         $hasAttachments = $request->hasFile('attachments');
         $messageType = 'text';

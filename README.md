@@ -1,53 +1,77 @@
-# AI Chatbot Setup (Laravel 13 & ReactJS)
+# Nusa AI — teman perjalanan 3D
 
-This repository contains a decoupled setup for an AI Chatbot project, featuring a **Laravel 13** backend, a **ReactJS (Vite)** frontend, and a **docs** folder for documentation.
+Nusa AI adalah aplikasi pemandu wisata Indonesia dengan landing page, ruang percakapan, dan avatar robot 3D yang bereaksi saat diam, berpikir, mendengarkan, dan menjawab.
 
-## Project Directory Structure
+## Menjalankan aplikasi
 
-```text
-AI-Chatbot/
-├── backend/             # Laravel 13 API Backend
-├── frontend/            # ReactJS + Vite Frontend (UI/UX)
-└── docs/                # Project Documentation & API Specs
-```
+Frontend dapat langsung dicoba dalam mode demo:
 
----
-
-## Quick Start Guide
-
-### 1. Run the Backend (Laravel 13)
-The backend is pre-configured with a local SQLite database and Laravel Sanctum for API token authentication.
-
-```bash
-cd backend
-php artisan serve
-```
-*The backend server will run at `http://127.0.0.1:8000`.*
-
-### 2. Run the Frontend (ReactJS + Vite)
-The frontend is built with React, Vite, and Lucide icons, styled with a premium dark glassmorphism theme.
-
-```bash
+```powershell
 cd frontend
+npm install
 npm run dev
 ```
-*The frontend development server will run at `http://localhost:5173`.*
 
----
+Buka alamat yang ditampilkan Vite, biasanya http://localhost:5173. Halaman utama menampilkan pengenalan aplikasi; tombol **Mulai petualangan** membuka ruang chat di `/#chat`.
 
-## Features Built-In
+Untuk AI langsung, jalankan backend Laravel pada terminal terpisah:
 
-1. **Authentication Flow**: Pre-configured Register, Login, and Logout API endpoints using Laravel Sanctum.
-2. **Dynamic Chat Interface**: A beautiful glassmorphic UI with chat history, model selection (Gemini/Claude), message bubbles, code formatting with copy-to-clipboard, and typing animations.
-3. **Dual Modes**:
-   - **Sandbox Mode (Fallback)**: Works immediately out of the box with responsive mock AI answers without running any backend servers.
-   - **Live Mode**: Automatically connects and communicates with the Laravel backend API once the server is running.
-4. **CORS Pre-configured**: CORS is configured in `backend/config/cors.php` to allow local cross-origin requests from the React development server.
+```powershell
+cd backend
+composer install
+php artisan migrate
+php artisan storage:link
+php artisan serve
+```
 
----
+Isi `GEMINI_API_KEY` pada `backend/.env` menggunakan kunci milikmu. Pertahankan konfigurasi database yang sudah digunakan proyek. Buka **Pengaturan dan akun** pada ruang chat, periksa alamat layanan (default `http://localhost:8000/api`), lalu masuk atau buat akun.
 
-## Documentation
+Mode demo menggunakan jawaban contoh lokal dan selalu diberi label. Mode AI langsung menggunakan API Laravel yang terhubung. Kegagalan API ditampilkan sebagai pemberitahuan dan tidak diganti dengan jawaban demo tanpa penjelasan.
 
-For more detailed guides, check out the `docs` folder:
-- [General Documentation](file:///c:/xampp/htdocs/AI-Chatbot/docs/README.md)
-- [API Endpoint Specification](file:///c:/xampp/htdocs/AI-Chatbot/docs/api-endpoints.md)
+## Pengalaman aplikasi
+
+- Landing page dalam bahasa Indonesia dengan foto destinasi lokal, marquee, animasi masuk saat scroll, parallax kartu, filter wilayah, FAQ, dan tombol yang membuka percakapan.
+- Robot 3D lokal berlisensi CC0. Animasi Idle, Wave, Yes, dan ThumbsUp dipadukan dengan napas, kedipan, gerakan kepala, ekspresi berpikir, dan gerakan mulut saat merespons.
+- Ruang chat dengan riwayat lokal, percakapan baru, hapus sesi, salin jawaban, hentikan respons, akun, dan koneksi Laravel.
+- Dikte dan pembacaan jawaban menggunakan kemampuan browser. Ketersediaan suara Indonesia dan pengenalan suara bergantung browser/perangkat. Izin mikrofon diminta saat pengguna menekan tombol dikte.
+- Unggahan gambar, audio, dan video pada sesi AI langsung diteruskan ke backend; ukuran maksimal 20 MB per berkas.
+- Tata letak desktop, tablet, dan ponsel. Avatar tampil dalam panel di desktop dan bar ringkas pada layar kecil.
+- Preferensi **reduced motion** dari perangkat dihormati. Rendering 3D berhenti ketika halaman atau avatar tidak terlihat; fallback tersedia jika WebGL tidak dapat dipakai.
+- Model, foto, dan font disimpan di `frontend/public`. Halaman pengenalan dan demo tidak memerlukan layanan aset eksternal.
+
+## Struktur
+
+```text
+frontend/src/App.jsx                   Landing page dan navigasi hash
+frontend/src/App.css                   Tata letak dan animasi landing
+frontend/src/components/ChatWorkspace  Ruang percakapan dan koneksi akun
+frontend/src/components/AvatarCanvas   Model dan siklus animasi avatar
+frontend/src/lib/travelDemo.js         Jawaban contoh lokal
+frontend/public/models                Avatar dan atribusi
+frontend/public/images                Foto destinasi dan sumber
+frontend/public/fonts                 Font lokal dan lisensi
+backend/                              Laravel API, Sanctum, dan Gemini
+```
+
+## Pemeriksaan
+
+```powershell
+cd frontend
+npm run build
+npm run lint
+
+cd ../backend
+php artisan test --filter=ChatSessionAccessTest
+```
+
+Tes akses sesi memverifikasi bahwa pengguna tidak dapat menulis ke percakapan akun lain serta sesi UUID baru dapat menerima jawaban. Panggilan penyedia AI dalam tes menggunakan respons tiruan.
+
+Build memisahkan ruang chat dan mesin 3D dari kode awal landing page. Paket mesin 3D tetap lebih besar daripada komponen UI karena memuat Three.js.
+
+## Aset
+
+Sumber dan lisensi avatar: [frontend/public/models/ATTRIBUTION.md](frontend/public/models/ATTRIBUTION.md).
+
+Sumber foto: [frontend/public/images/ATTRIBUTION.md](frontend/public/images/ATTRIBUTION.md).
+
+Font DM Sans dan Manrope menggunakan SIL Open Font License; salinan lisensi tersedia di folder font.
