@@ -51,3 +51,14 @@ All notable changes to the AI Chatbot project will be documented here.
   - Retrieve and return message attachments in the `getSessionMessages` and `sendMessage` endpoints.
 
 
+
+## [2026-10-27] Audit dan pengembangan menyeluruh
+
+- Memperketat validasi unggahan, menyimpan media baru secara privat, memberi tautan sementara, membersihkan berkas saat sesi dihapus, serta menyediakan migrasi lampiran lama dengan dry-run bawaan.
+- Menambah pembatasan login/register/chat, transaksi registrasi, normalisasi email, token berumur terbatas, serta batas konteks penyedia dan unggahan efektif PHP.
+- Memperbaiki keamanan pergantian layanan, pemulihan/isolasi riwayat, validasi data, pembaruan tautan, persistensi lokal, prompt destinasi, dan fokus dialog/drawer.
+- Menunda avatar landing sampai mendekati layar, mengeluarkan 46,89 MB aset percobaan dari build sambil mempertahankan sumber, memperbaiki keterbacaan chat, serta menambah pemulihan kegagalan halaman.
+- Memperbarui dependensi yang memiliki advisori; audit akhir npm dan Composer tidak menemukan advisori yang diketahui.
+- Menangani path sertifikat AI yang tidak valid dengan pesan aman; mengoreksi hanya path CA pada konfigurasi lokal. Uji teks Gemini nyata berhasil tanpa mengubah kunci API/data pengguna.
+- Verifikasi akhir: 12 tes frontend, 33 tes backend/233 assertions, lint, build, audit dependensi, dan smoke HTTP lokal lulus. Pemeriksaan visual browser/perangkat/suara/media AI nyata belum dinyatakan selesai.
+- Rincian lima tahap dan batas verifikasi: [laporan pengembangan](development-audit-2026-10-27.md).

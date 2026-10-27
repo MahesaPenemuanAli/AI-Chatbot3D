@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Exceptions\ChatServiceException;
 use App\Http\Controllers\Controller;
 use App\Models\ChatSession;
+use App\Models\MessageAttachment;
 use App\Services\GeminiChatService;
+use App\Services\UploadLimits;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -13,6 +15,9 @@ use Illuminate\Validation\ValidationException;
 
 class ChatController extends Controller
 {
+    protected const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+    protected const MAX_HISTORY_MESSAGES = 20;
+
     protected const SYSTEM_INSTRUCTION = 'Kamu adalah "Nusa AI", teman perjalanan virtual dan asisten AI pemandu pariwisata Indonesia yang hangat, ramah, dan sangat ahli dalam memberikan panduan wisata, sejarah, budaya, kuliner, dan rencana perjalanan (itinerary).
 
 Tugas utama kamu:
@@ -24,15 +29,30 @@ Tugas utama kamu:
 
     public function sendMessage(Request $request, string $sessionId, GeminiChatService $chat)
     {
+        $limits = UploadLimits::current();
         $request->validate([
             'message' => ['nullable', 'string', 'max:12000'],
-            'attachments' => ['nullable', 'array'],
-            'attachments.*' => ['file', 'max:20480'],
+            'attachments' => ['nullable', 'array', 'max:'.$limits['max_attachment_count']],
+            'attachments.*' => ['file', 'max:20480', 'mimetypes:'.implode(',', MessageAttachment::ALLOWED_MIME_TYPES)],
         ]);
 
         $user = $request->user();
         $text = trim((string) $request->input('message', ''));
-        $files = $request->file('attachments', []);
+        $files = $request->file('attachments', []) ?? [];
+        if (array_sum(array_map(fn ($file) => $file->getSize(), $files)) > $limits['max_total_attachment_bytes']) {
+            throw ValidationException::withMessages(['attachments' => 'Ukuran total lampiran melebihi batas unggahan server.']);
+        }
+        foreach ($files as $file) {
+            if ($file->getSize() > $limits['max_attachment_bytes']) {
+                throw ValidationException::withMessages(['attachments' => 'Ukuran berkas melebihi batas unggahan server.']);
+            }
+            if (strlen($file->getClientOriginalName()) > 255) {
+                throw ValidationException::withMessages(['attachments' => 'Nama berkas terlalu panjang (maksimal 255 byte).']);
+            }
+        }
+        if (strlen($sessionId) > 255) {
+            throw ValidationException::withMessages(['session' => 'ID percakapan terlalu panjang.']);
+        }
         $chatSession = ChatSession::find($sessionId);
 
         // Check ownership before configuration or provider work, including failed turns.
@@ -44,19 +64,27 @@ Tugas utama kamu:
         }
 
         $contents = [];
+        $remainingMediaBytes = self::MAX_ATTACHMENT_BYTES - array_sum(array_map(fn ($file) => $file->getSize(), $files));
         if ($chatSession) {
-            foreach ($chatSession->messages()->with('attachments')->orderBy('id')->get() as $message) {
+            // Keep the archive intact, but bound provider payload and memory per request.
+            $history = $chatSession->messages()->with('attachments')->reorder()->orderByDesc('id')->limit(self::MAX_HISTORY_MESSAGES)->get();
+            foreach ($history as $message) {
                 $parts = [];
                 if ($message->content !== null && $message->content !== '') {
                     $parts[] = ['text' => $message->content];
                 }
                 foreach ($message->attachments as $attachment) {
-                    $path = preg_replace('/^storage\//', '', $attachment->file_path);
-                    if (Storage::disk('public')->exists($path)) {
+                    [$disk, $path] = $attachment->storageLocation();
+                    if (in_array($attachment->mime_type, MessageAttachment::ALLOWED_MIME_TYPES, true)
+                        && Storage::disk($disk)->exists($path)
+                        && ($bytes = Storage::disk($disk)->size($path)) <= $remainingMediaBytes) {
+                        $remainingMediaBytes -= $bytes;
                         $parts[] = ['inlineData' => [
                             'mimeType' => $attachment->mime_type,
-                            'data' => base64_encode(Storage::disk('public')->get($path)),
+                            'data' => base64_encode(Storage::disk($disk)->get($path)),
                         ]];
+                    } else {
+                        $parts[] = ['text' => '[Lampiran lama tidak disertakan; minta pengguna mengunggah ulang jika diperlukan.]'];
                     }
                 }
                 if ($parts !== []) {
@@ -66,6 +94,7 @@ Tugas utama kamu:
                     ];
                 }
             }
+            $contents = array_reverse($contents);
         }
 
         $parts = $text !== '' ? [['text' => $text]] : [];
@@ -108,7 +137,7 @@ Tugas utama kamu:
                 ]);
                 $attachments = [];
                 foreach ($files as $file) {
-                    $path = $file->store('attachments', 'public');
+                    $path = $file->store('attachments', 'local');
                     if (! $path) {
                         throw new \RuntimeException('Cannot store chat attachment.');
                     }
@@ -118,7 +147,7 @@ Tugas utama kamu:
                         : (str_starts_with($mimeType, 'audio/') ? 'audio' : 'image');
                     $attachments[] = $userMessage->attachments()->create([
                         'attachment_type' => $type,
-                        'file_path' => 'storage/'.$path,
+                        'file_path' => 'private/'.$path,
                         'file_name' => $file->getClientOriginalName(),
                         'mime_type' => $mimeType,
                         'file_size' => $file->getSize(),
@@ -134,7 +163,7 @@ Tugas utama kamu:
                 return [$userMessage, $aiMessage, $attachments];
             });
         } catch (\Throwable $exception) {
-            Storage::disk('public')->delete($storedPaths);
+            Storage::disk('local')->delete($storedPaths);
             throw $exception;
         }
 
@@ -144,7 +173,7 @@ Tugas utama kamu:
                 'role' => 'user',
                 'content' => $userMessage->content,
                 'created_at' => $userMessage->created_at,
-                'attachments' => $attachments,
+                'attachments' => array_map(fn ($attachment) => $attachment->toApiArray(), $attachments),
             ],
             'ai_message' => [
                 'id' => $aiMessage->id,
@@ -170,7 +199,7 @@ Tugas utama kamu:
             ->where('id', $id)
             ->firstOrFail();
 
-        $messages = $session->messages()->with('attachments')->orderBy('created_at', 'asc')->get();
+        $messages = $session->messages()->with('attachments')->reorder()->orderBy('created_at')->orderBy('id')->get();
 
         $formattedMessages = $messages->map(function ($msg) {
             return [
@@ -178,16 +207,7 @@ Tugas utama kamu:
                 'role' => $msg->role === 'model' ? 'assistant' : $msg->role,
                 'content' => $msg->content,
                 'created_at' => $msg->created_at,
-                'attachments' => $msg->attachments->map(function ($att) {
-                    return [
-                        'id' => $att->id,
-                        'attachment_type' => $att->attachment_type,
-                        'file_path' => $att->file_path,
-                        'file_name' => $att->file_name,
-                        'mime_type' => $att->mime_type,
-                        'file_size' => $att->file_size,
-                    ];
-                }),
+                'attachments' => $msg->attachments->map(fn ($att) => $att->toApiArray()),
             ];
         });
 
@@ -200,10 +220,32 @@ Tugas utama kamu:
             ->where('id', $id)
             ->firstOrFail();
 
+        // Delete only paths owned by this session, including legacy public uploads.
+        foreach ($session->messages()->with('attachments')->get() as $message) {
+            foreach ($message->attachments as $attachment) {
+                [$disk, $path] = $attachment->storageLocation();
+                abort_unless(Storage::disk($disk)->delete($path), 503, 'Lampiran belum dapat dihapus. Coba lagi.');
+            }
+        }
         $session->delete();
 
         return response()->json([
             'message' => 'Session deleted successfully',
         ]);
+    }
+
+    public function downloadAttachment(MessageAttachment $attachment)
+    {
+        // Preserve previews of legacy passive images even when the AI cannot ingest them.
+        abort_unless(in_array($attachment->mime_type, [...MessageAttachment::ALLOWED_MIME_TYPES, 'image/gif', 'image/avif'], true), 404);
+        [$disk, $path] = $attachment->storageLocation();
+        abort_unless(Storage::disk($disk)->exists($path), 404);
+
+        return Storage::disk($disk)->response($path, $attachment->file_name, [
+            'Content-Type' => $attachment->mime_type,
+            'X-Content-Type-Options' => 'nosniff',
+            'Cache-Control' => 'private, no-store',
+            'Referrer-Policy' => 'no-referrer',
+        ], 'inline');
     }
 }

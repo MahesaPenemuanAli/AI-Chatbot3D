@@ -1,8 +1,9 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowDownRight, ArrowRight, ArrowUpRight, AudioLines, ChevronDown, Compass, Globe2, MapPin, Menu, MessageCircle, Navigation, Sparkles, Volume2, X } from 'lucide-react'
 const AvatarCanvas = lazy(() => import('./components/AvatarCanvas'))
 import './App.css'
 import LandingFilm from './components/LandingFilm'
+import ErrorBoundary from './components/ErrorBoundary'
 
 const ChatWorkspace = lazy(() => import('./components/ChatWorkspace'))
 
@@ -23,7 +24,42 @@ function Brand() {
   return <a className="brand" href="#" aria-label="Nusa AI — halaman utama"><span className="brand-symbol"><Sparkles size={22} strokeWidth={1.8} /></span><span>nusa<span className="brand-ai">ai</span><span className="brand-dot">.</span></span></a>
 }
 
+function LoadingAvatar() {
+  return <div className="avatar-loading"><Sparkles size={38} /><span>Menyiapkan Nusa…</span></div>
+}
+
+function LandingAvatar({ greeting }) {
+  const stageRef = useRef(null)
+  const [nearby, setNearby] = useState(false)
+  useEffect(() => {
+    if (!('IntersectionObserver' in window)) { setNearby(true); return }
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) { setNearby(true); observer.disconnect() }
+    }, { rootMargin: '200px' })
+    if (stageRef.current) observer.observe(stageRef.current)
+    return () => observer.disconnect()
+  }, [])
+  return <div ref={stageRef} className="landing-avatar-stage"><ErrorBoundary fallback={<div className="avatar-loading"><Sparkles size={38} /><span>Nusa tetap bisa menemanimu lewat chat.</span></div>}>
+    {nearby ? <Suspense fallback={<LoadingAvatar />}><AvatarCanvas greeting={greeting} /></Suspense> : <LoadingAvatar />}
+  </ErrorBoundary></div>
+}
+
+function ChatPage(props) {
+  useEffect(() => {
+    const main = document.querySelector('.chat-main')
+    main?.setAttribute('tabindex', '-1')
+    main?.focus({ preventScroll: true })
+  }, [])
+  return <ChatWorkspace {...props} />
+}
+
+function PageRecovery({ onBack }) {
+  return <main className="page-recovery" role="alert"><Sparkles size={36} /><h1>Halaman belum bisa dimuat.</h1><p>Periksa koneksi, lalu coba muat ulang untuk melanjutkan.</p><div><button className="button button-dark" onClick={() => window.location.reload()}>Muat ulang</button><button className="button" onClick={onBack}>Kembali ke beranda</button></div></main>
+}
+
 function LandingPage({ openChat }) {
+  const menuButtonRef = useRef(null)
+  const mainRef = useRef(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [region, setRegion] = useState('Semua destinasi')
   const [faqOpen, setFaqOpen] = useState(0)
@@ -31,12 +67,27 @@ function LandingPage({ openChat }) {
   const [demoInput, setDemoInput] = useState('')
 
   useEffect(() => {
+    // Mount also occurs after returning from the chat route.
+    mainRef.current?.focus({ preventScroll: true })
+    if (!('IntersectionObserver' in window)) {
+      document.querySelectorAll('[data-reveal]').forEach(element => element.classList.add('is-visible'))
+      return
+    }
     const observer = new IntersectionObserver(entries => entries.forEach(entry => {
       if (entry.isIntersecting) { entry.target.classList.add('is-visible'); observer.unobserve(entry.target) }
     }), { threshold: 0.08 })
     document.querySelectorAll('[data-reveal]').forEach(element => observer.observe(element))
     return () => observer.disconnect()
   }, [])
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const onKeyDown = event => {
+      if (event.key === 'Escape') { setMenuOpen(false); menuButtonRef.current?.focus() }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [menuOpen])
 
   const closeMenu = () => setMenuOpen(false)
   const filteredDestinations = destinations.filter(destination => region === 'Semua destinasi' || destination.region === region)
@@ -45,15 +96,15 @@ function LandingPage({ openChat }) {
     <header className="site-header cinema-header">
       <div className="nav-container">
         <Brand />
-        <nav aria-label="Navigasi utama" className={menuOpen ? 'nav-links nav-open' : 'nav-links'}>
+        <nav id="main-navigation" aria-label="Navigasi utama" className={menuOpen ? 'nav-links nav-open' : 'nav-links'}>
           <a href="#kenalan" onClick={closeMenu}>Temui Nusa</a>
           <a href="#destinasi" onClick={closeMenu}>Jelajah destinasi</a>
           <a href="#cara-kerja" onClick={closeMenu}>Cara kerja</a>
         </nav>
-        <div className="nav-actions"><span className="language"><Globe2 size={15} /> ID</span><button className="button button-lime nav-cta" onClick={() => openChat()}>Mulai ngobrol <ArrowUpRight size={16} /></button><button className="mobile-menu icon-button" aria-label={menuOpen ? 'Tutup menu' : 'Buka menu'} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X /> : <Menu />}</button></div>
+        <div className="nav-actions"><span className="language"><Globe2 size={15} /> ID</span><button className="button button-lime nav-cta" onClick={() => openChat()}>Mulai ngobrol <ArrowUpRight size={16} /></button><button ref={menuButtonRef} className="mobile-menu icon-button" aria-label={menuOpen ? 'Tutup menu' : 'Buka menu'} aria-controls="main-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X /> : <Menu />}</button></div>
       </div>
     </header>
-    <main id="konten">
+    <main ref={mainRef} id="konten" tabIndex={-1}>
       <section className="cinema-hero" id="beranda">
         <LandingFilm />
         <div className="section-container cinema-content">
@@ -73,7 +124,7 @@ function LandingPage({ openChat }) {
         </div>
       </section>
       <section className="companion-intro" id="kenalan"><div className="section-container companion-intro-inner">
-        <div className="companion-intro-stage"><span className="companion-orbit companion-orbit-one"/><span className="companion-orbit companion-orbit-two"/><div className="companion-intro-avatar"><Suspense fallback={<div className="avatar-loading"><Sparkles size={38}/><span>Menyiapkan Nusa…</span></div>}><AvatarCanvas greeting={greeting}/></Suspense></div><div className="companion-stage-label"><span className="live-dot"/> NUSA / YOUR TRAVEL COMPANION</div><button className="companion-wave" aria-label="Sapa Nusa" onClick={() => setGreeting(value => value + 1)}>Sapa Nusa <span>👋</span></button><span className="companion-stage-coordinate">8°39′ S &nbsp; 119°34′ E</span></div>
+        <div className="companion-intro-stage"><span className="companion-orbit companion-orbit-one"/><span className="companion-orbit companion-orbit-two"/><div className="companion-intro-avatar"><LandingAvatar greeting={greeting} /></div><div className="companion-stage-label"><span className="live-dot"/> NUSA / YOUR TRAVEL COMPANION</div><button className="companion-wave" aria-label="Sapa Nusa" onClick={() => setGreeting(value => value + 1)}>Sapa Nusa <span>👋</span></button><span className="companion-stage-coordinate">8°39′ S &nbsp; 119°34′ E</span></div>
         <div className="companion-intro-copy" data-reveal><div className="eyebrow"><span className="section-index">01 /</span> KENALAN DENGAN NUSA</div><h2>Ada teman.<br />Di setiap <span>rencana.</span></h2><p>Hai, aku Nusa. Teman anime 3D yang mendengarkan idemu, ikut penasaran, dan membantumu menemukan sisi lain Indonesia.</p><div className="companion-feature-tabs"><span><AudioLines size={15}/> Suara & ekspresi</span><span><Compass size={15}/> Ide perjalanan</span></div><div className="companion-intro-note"><strong>3D</strong><span>Bergerak, berkedip, dan menyapamu.<br />Satu teman untuk banyak cerita.</span></div><button className="text-button" onClick={() => openChat()}>Mulai percakapan <ArrowUpRight size={19}/></button></div>
       </div></section>
       <div className="marquee" aria-hidden="true"><div className="marquee-track">{[0, 1, 2, 3].map(i => <span key={i}>LESS PLANNING <span>✳</span> MORE EXPLORING <span>✳</span> YOUR OWN PACE <span>✳</span> WITH NUSA <span>✳</span></span>)}</div></div>
@@ -106,5 +157,5 @@ export default function App() {
   useEffect(() => { document.title = page === 'chat' ? 'Ngobrol dengan Nusa — Nusa AI' : 'Nusa AI — Teman untuk setiap petualangan'; window.scrollTo(0, 0) }, [page])
   const openChat = (prompt = '') => { setInitialPrompt(prompt); setPage('chat'); window.location.hash = 'chat' }
   const backHome = () => { setInitialPrompt(''); setPage('home'); window.location.hash = ''; window.scrollTo(0, 0) }
-  return page === 'chat' ? <Suspense fallback={<div className="app-loading"><Sparkles size={30} /><p>Nusa sedang bersiap…</p></div>}><ChatWorkspace onBack={backHome} initialPrompt={initialPrompt} /></Suspense> : <LandingPage openChat={openChat} />
+  return page === 'chat' ? <Suspense fallback={<div className="app-loading"><Sparkles size={30} /><p>Nusa sedang bersiap…</p></div>}><ErrorBoundary fallback={<PageRecovery onBack={backHome} />}><ChatPage onBack={backHome} initialPrompt={initialPrompt} /></ErrorBoundary></Suspense> : <LandingPage openChat={openChat} />
 }

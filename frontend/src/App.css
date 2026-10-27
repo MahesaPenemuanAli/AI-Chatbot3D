@@ -1870,6 +1870,19 @@
 .avatar-loading>svg {
   animation: slowTurn 15s linear infinite;
 }
+.landing-avatar-stage { width: 100%; height: 100%; }
+.page-recovery {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 28px;
+  text-align: center;
+}
+.page-recovery p { max-width: 420px; line-height: 1.7; }
+.page-recovery>div { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+#konten:focus { outline: none; }
 .skip-link {
   position: fixed;
   left: 16px;

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ChatController;
 use App\Services\GeminiChatService;
+use App\Services\UploadLimits;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -12,6 +13,7 @@ Route::get('/status', function (GeminiChatService $chat) {
     return response()->json([
         'provider' => 'gemini',
         'configured' => $configured,
+        'upload_limits' => UploadLimits::current(),
         'code' => $configured ? 'AI_CONFIGURED' : 'AI_NOT_CONFIGURED',
         'message' => $configured
             ? 'Layanan AI telah dikonfigurasi.'
@@ -20,8 +22,12 @@ Route::get('/status', function (GeminiChatService $chat) {
 });
 
 // Public Auth Routes
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/register', [AuthController::class, 'register'])->middleware('throttle:register');
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
+
+// Only authenticated owner responses can mint these short-lived bearer URLs.
+Route::get('/chat/attachments/{attachment}', [ChatController::class, 'downloadAttachment'])
+    ->whereNumber('attachment')->middleware('signed:relative')->name('chat.attachments.download');
 
 // Protected Routes
 Route::middleware('auth:sanctum')->group(function () {
@@ -33,6 +39,6 @@ Route::middleware('auth:sanctum')->group(function () {
     // Chat Routes
     Route::get('/chat/sessions', [ChatController::class, 'listSessions']);
     Route::get('/chat/sessions/{id}/messages', [ChatController::class, 'getSessionMessages']);
-    Route::post('/chat/sessions/{id}/messages', [ChatController::class, 'sendMessage']);
+    Route::post('/chat/sessions/{id}/messages', [ChatController::class, 'sendMessage'])->middleware('throttle:chat');
     Route::delete('/chat/sessions/{id}', [ChatController::class, 'deleteSession']);
 });

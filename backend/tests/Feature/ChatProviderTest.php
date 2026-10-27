@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Services\UploadLimits;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
@@ -33,6 +34,7 @@ class ChatProviderTest extends TestCase
         $this->getJson('/api/status')->assertOk()->assertExactJson([
             'provider' => 'gemini',
             'configured' => true,
+            'upload_limits' => UploadLimits::current(),
             'code' => 'AI_CONFIGURED',
             'message' => 'Layanan AI telah dikonfigurasi.',
         ]);
@@ -78,25 +80,25 @@ class ChatProviderTest extends TestCase
     public function test_rate_limited_turn_can_be_retried_without_duplicate_messages_or_uploads(): void
     {
         Sanctum::actingAs(User::factory()->create());
-        Storage::fake('public');
+        Storage::fake('local');
         Http::fakeSequence()->push(['error' => ['status' => 'RESOURCE_EXHAUSTED']], 429)
             ->push($this->reply(), 200);
         $endpoint = $this->endpoint();
-        $file = UploadedFile::fake()->createWithContent('peta.txt', 'Peta perjalanan ke Bali');
+        $file = UploadedFile::fake()->createWithContent('peta.png', base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jGZkAAAAASUVORK5CYII='));
 
         $this->postJson($endpoint, ['message' => 'Jelaskan peta ini', 'attachments' => [$file]])
             ->assertStatus(429)
             ->assertJsonPath('code', 'AI_RATE_LIMITED')
             ->assertJsonPath('retryable', true);
         $this->assertNoTurn();
-        $this->assertSame([], Storage::disk('public')->allFiles());
+        $this->assertSame([], Storage::disk('local')->allFiles());
 
         $this->postJson($endpoint, ['message' => 'Jelaskan peta ini', 'attachments' => [$file]])
             ->assertOk()->assertJsonPath('ai_message.content', 'Mari jelajahi Bali.');
         $this->assertDatabaseCount('chat_sessions', 1);
         $this->assertDatabaseCount('chat_messages', 2);
         $this->assertDatabaseCount('message_attachments', 1);
-        $this->assertCount(1, Storage::disk('public')->allFiles());
+        $this->assertCount(1, Storage::disk('local')->allFiles());
         Http::assertSentCount(2);
     }
 
@@ -153,6 +155,23 @@ class ChatProviderTest extends TestCase
             ->assertJsonPath('code', 'AI_TLS_ERROR')
             ->assertJsonPath('retryable', false);
         $this->assertNoTurn();
+    }
+
+    public function test_missing_or_malformed_ca_configuration_is_safe_and_never_calls_the_provider(): void
+    {
+        Sanctum::actingAs(User::factory()->create());
+        foreach (['C:/private-server-config/missing-certificate.pem', 'GEMINI_CA_BUNDLE="C:/private-server-config/certificate.pem"', __DIR__] as $bundle) {
+            config(['services.gemini.ca_bundle' => $bundle]);
+            $this->postJson($this->endpoint(), ['message' => 'Halo Nusa'])
+                ->assertStatus(503)
+                ->assertJsonPath('code', 'AI_TLS_ERROR')
+                ->assertJsonPath('retryable', false)
+                ->assertDontSee('private-server-config')
+                ->assertDontSee('nusa-test-only-key')
+                ->assertDontSee($bundle);
+        }
+        $this->assertNoTurn();
+        Http::assertNothingSent();
     }
 
     public function test_provider_outage_is_bounded_and_does_not_persist_a_failed_turn(): void
