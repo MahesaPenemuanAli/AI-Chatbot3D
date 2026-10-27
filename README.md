@@ -1,6 +1,6 @@
 # Nusa AI — teman perjalanan 3D
 
-Nusa AI adalah aplikasi pemandu wisata Indonesia dengan landing page berlatar video, ruang percakapan, dan avatar perempuan anime 3D yang bereaksi saat diam, berpikir, mendengarkan, dan menjawab.
+Nusa AI adalah aplikasi pemandu wisata Indonesia dengan landing page 3D interaktif, ruang percakapan, dan avatar perempuan anime 3D yang bereaksi saat diam, berpikir, mendengarkan, dan menjawab.
 
 ## Menjalankan aplikasi
 
@@ -12,7 +12,7 @@ npm install
 npm run dev
 ```
 
-Buka alamat yang ditampilkan Vite, biasanya http://localhost:5173. Halaman utama menampilkan pengenalan aplikasi; tombol **Mulai petualangan** membuka ruang chat di `/#chat`.
+Buka alamat yang ditampilkan Vite, biasanya http://localhost:5173. Halaman utama menampilkan pengenalan aplikasi; tombol **Mulai cerita** membuka ruang chat di `/#chat`.
 
 Untuk AI langsung, jalankan backend Laravel pada terminal terpisah:
 
@@ -43,7 +43,8 @@ Mode demo menggunakan jawaban contoh lokal dan selalu diberi label. Mode AI lang
 
 ## Pengalaman aplikasi
 
-- Landing page dalam bahasa Indonesia dengan video alam layar penuh, judul putih dan hijau limau, perkenalan avatar, filter destinasi, FAQ, dan tombol yang membuka percakapan. Video dapat dijeda dan berhenti saat tidak terlihat.
+- Landing page dalam bahasa Indonesia dengan cerita scroll tiga bagian, kompas dan globe 3D yang berubah posisi serta rotasi mengikuti guliran, tipografi besar, dan palet hijau hutan–limau. Galeri destinasi bergeser menyamping pada desktop dan dapat digeser langsung pada ponsel.
+- Perkenalan avatar dimuat saat mendekati layar. Video wisata lokal hadir dalam bingkai tersendiri, dengan tombol jeda dan penghentian otomatis saat tidak terlihat. Filter destinasi, FAQ, dan tombol chat tetap dapat dipakai dengan keyboard.
 - Avatar anime VRM lokal berlisensi CC0, dengan gerakan napas, kedipan, arah kepala, lambaian, ekspresi berpikir/mendengarkan, gerakan mulut saat merespons, dan simulasi rambut/pakaian. Model ini adalah karakter sampel VRoid, bukan model Misa Amane yang persis.
 - Ruang chat dengan riwayat lokal, percakapan baru, hapus sesi, salin jawaban, hentikan respons, akun, dan koneksi Laravel.
 - Dikte dan pembacaan jawaban menggunakan kemampuan browser. Ketersediaan suara Indonesia dan pengenalan suara bergantung browser/perangkat. Izin mikrofon diminta saat pengguna menekan tombol dikte.
@@ -60,11 +61,15 @@ frontend/src/App.css                   Tata letak dan animasi landing
 frontend/src/components/ChatWorkspace  Ruang percakapan dan koneksi akun
 frontend/src/components/AvatarCanvas   Model dan siklus animasi avatar
 frontend/src/components/AnimeAvatar    Rig VRM, ekspresi, dan animasi anime
-frontend/src/components/LandingFilm    Pemutaran video latar yang aksesibel
+frontend/src/components/LandingStory   Alur scroll dan adegan pembuka
+frontend/src/components/JourneyScene   Kompas, globe, dan jalur pesawat 3D
+frontend/src/components/DestinationGallery Galeri destinasi horizontal
+frontend/src/components/CompanionIntro Perkenalan avatar yang dimuat bertahap
+frontend/src/components/LandingFilm    Pemutaran video wisata yang aksesibel
 frontend/src/lib/travelDemo.js         Jawaban contoh lokal
 frontend/public/models                Avatar dan atribusi
-frontend/public/videos                Video latar siap pakai
-frontend/video/landing-loop            Sumber HyperFrames untuk video latar
+frontend/public/videos                Video wisata siap pakai
+frontend/video/landing-loop            Sumber HyperFrames untuk video wisata
 frontend/public/images                Foto destinasi dan sumber
 frontend/public/fonts                 Font lokal dan lisensi
 backend/                              Laravel API, Sanctum, dan Gemini
@@ -92,7 +97,7 @@ Sumber dan lisensi avatar: [frontend/public/models/ATTRIBUTION.md](frontend/publ
 
 Sumber foto: [frontend/public/images/ATTRIBUTION.md](frontend/public/images/ATTRIBUTION.md).
 
-Video latar adalah animasi kamera pada foto Pulau Padar lokal, tanpa audio;
+Video wisata adalah animasi kamera pada foto Pulau Padar lokal, tanpa audio;
 petunjuk pembuatan ulang ada di
 [frontend/video/landing-loop/README.md](frontend/video/landing-loop/README.md).
 

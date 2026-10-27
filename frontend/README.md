@@ -18,10 +18,17 @@ isi `VITE_API_URL` saat build atau ubah alamat pada pengaturan koneksi.
 Kunci Gemini disimpan pada server, melalui pengaturan lingkungan atau `.env`
 backend, dan tidak dimasukkan ke bundle frontend.
 
-Video hero berada di `public/videos/nusa-landscape.mp4`; sumber dan petunjuk
-pembuatan ulang tersedia di `video/landing-loop/README.md`. Video ini adalah
-animasi foto lokal yang berulang, bukan unduhan YouTube. Preferensi reduced
-motion menampilkan poster diam. Avatar memakai model anime VRM lokal dengan
-gerakan tubuh dan ekspresi; lisensinya tercantum di `public/models/ATTRIBUTION.md`.
+Hero memakai kompas dan globe 3D prosedural dengan perubahan posisi/rotasi
+mengikuti guliran. `LandingStory` mengatur tiga bagian cerita tanpa melakukan
+render ulang seluruh halaman pada setiap frame scroll. Galeri destinasi
+bergerak horizontal pada desktop dan memakai scroll native pada ponsel atau
+mode reduced motion. Aset dan tekstur eksternal tidak diperlukan untuk kompas.
+
+Video wisata di bagian tersendiri berada di `public/videos/nusa-landscape.mp4`;
+sumber dan petunjuk pembuatan ulang tersedia di `video/landing-loop/README.md`.
+Video ini adalah animasi foto lokal yang berulang. Preferensi reduced motion
+menampilkan poster diam. Avatar memakai model anime VRM lokal dengan gerakan
+tubuh dan ekspresi, dimuat saat bagian perkenalan mendekati layar; lisensinya
+tercantum di `public/models/ATTRIBUTION.md`.
 
 Petunjuk lengkap: [README proyek](../README.md).
