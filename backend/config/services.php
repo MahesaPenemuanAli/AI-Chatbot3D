@@ -2,6 +2,14 @@
 
 return [
 
+    'gemini' => [
+        'key' => env('GEMINI_API_KEY'),
+        'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
+        'fallback_model' => env('GEMINI_FALLBACK_MODEL', 'gemini-2.5-flash-lite'),
+        // Use PHP's trusted system/proxy CA bundle unless explicitly overridden.
+        'ca_bundle' => env('GEMINI_CA_BUNDLE'),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Third Party Services

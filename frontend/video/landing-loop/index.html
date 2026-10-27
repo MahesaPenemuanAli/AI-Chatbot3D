@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1280, height=720" />
+    <title>Nusa — Pulau Padar landscape loop</title>
+    <script src="assets/gsap.min.js"></script>
+    <style>
+      * { margin: 0; box-sizing: border-box; }
+      html, body { width: 1280px; height: 720px; overflow: hidden; background: #071c16; }
+      #landscape { width: 100%; height: 100%; overflow: hidden; position: relative; }
+      .still, #camera {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        object-fit: cover; object-position: 50% 48%;
+        transform-origin: 50% 50%;
+      }
+      .still { transform: translate(-22px, 5px) scale(1.1); }
+      #camera { will-change: transform; }
+    </style>
+  </head>
+  <body>
+    <div id="landscape" data-composition-id="landscape" data-start="0"
+      data-duration="12" data-width="1280" data-height="720">
+      <img class="still" src="assets/padar.jpg" alt="" data-layout-ignore />
+      <img id="camera" class="clip" src="assets/padar.jpg" alt=""
+        data-start="0" data-duration="12" data-track-index="0"
+        data-layout-allow-overflow />
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      tl.set('#camera', { x: -22, y: 5, scale: 1.1 }, 0);
+      tl.from('#camera', { opacity: 0, duration: 0.45, ease: 'power3.out' }, 0.15);
+      tl.to('#camera', { x: 22, y: -5, scale: 1.16, duration: 5.85, ease: 'sine.inOut' }, 0.15);
+      tl.to('#camera', { x: -22, y: 5, scale: 1.1, duration: 5.85, ease: 'sine.inOut' }, 6);
+      window.__timelines = window.__timelines || {};
+      window.__timelines.landscape = tl;
+    </script>
+  </body>
+</html>

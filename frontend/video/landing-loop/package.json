@@ -1,0 +1,10 @@
+{
+  "name": "landing-loop",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npx --yes hyperframes@0.8.206 preview",
+    "check": "npx --yes hyperframes@0.8.206 check",
+    "render": "npx --yes hyperframes@0.8.206 render --fps 24 --quality standard --workers 2 --output ../../public/videos/nusa-landscape.mp4"
+  }
+}

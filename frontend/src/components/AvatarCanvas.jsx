@@ -5,9 +5,21 @@ import {
   MathUtils, Mesh, MeshBasicMaterial, Quaternion, SphereGeometry, Vector3,
 } from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import AnimeAvatar from './AnimeAvatar'
 
 const MODEL_URL = `${import.meta.env.BASE_URL}models/nusa-robot.glb`
 const wrapperStyle = { position: 'relative', width: '100%', height: '100%', minHeight: 0 }
+
+function supportsWebGL() {
+  try {
+    const context = document.createElement('canvas').getContext('webgl2')
+    if (!context) return false
+    context.getExtension('WEBGL_lose_context')?.loseContext()
+    return true
+  } catch {
+    return false
+  }
+}
 
 function disposeModel(scene) {
   const geometries = new Set()
@@ -313,11 +325,6 @@ function WebGLContextGuard({ onFailure }) {
   return null
 }
 
-function CanvasUnavailable({ onFailure, isSpeaking }) {
-  useEffect(() => { onFailure() }, [onFailure])
-  return <FriendlyFallback isSpeaking={isSpeaking} />
-}
-
 function SoftStage({ compact }) {
   return (
     <group>
@@ -333,7 +340,13 @@ function SoftStage({ compact }) {
   )
 }
 
-function FriendlyFallback({ loading = false, isSpeaking = false }) {
+function FriendlyFallback({ loading = false, isSpeaking = false, variant = 'anime' }) {
+  if (variant !== 'robot') return (
+    <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', overflow: 'hidden', borderRadius: 24 }}>
+      <img src={`${import.meta.env.BASE_URL}models/.candidate-darkness/preview.png`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '50% 35%' }} />
+      {loading && <span style={{ position: 'absolute', bottom: '5%', fontSize: 11, color: '#57705b', background: '#ffffffdd', borderRadius: 30, padding: '7px 13px' }}>Menyiapkan Nusa…</span>}
+    </div>
+  )
   return (
     <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
       <svg viewBox="0 0 260 300" width="75%" height="85%" aria-hidden="true">
@@ -371,10 +384,11 @@ export default function AvatarCanvas({
   className = '',
   compact = false,
   reducedMotion: requestedReducedMotion,
+  variant = 'anime',
 }) {
   const root = useRef(null)
   const [ready, setReady] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [failed, setFailed] = useState(() => !supportsWebGL())
   const [visible, setVisible] = useState(true)
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
   const reducedMotion = requestedReducedMotion ?? prefersReducedMotion
@@ -402,30 +416,34 @@ export default function AvatarCanvas({
   }, [])
 
   const status = isSpeaking ? 'sedang berbicara' : isThinking ? 'sedang berpikir' : isListening ? 'sedang mendengarkan' : 'siap menemani'
-  const fallback = <FriendlyFallback isSpeaking={isSpeaking} />
+  const fallback = <FriendlyFallback isSpeaking={isSpeaking} variant={variant} />
   return (
     <div ref={root} className={`nusa-avatar ${className}`} style={wrapperStyle} role="img" aria-label={`Avatar 3D Nusa, ${status}`} data-avatar-state={isSpeaking ? 'speaking' : isThinking ? 'thinking' : isListening ? 'listening' : 'idle'}>
       {failed ? fallback : <AvatarErrorBoundary fallback={fallback}>
-        {!ready && <FriendlyFallback loading />}
+        {!ready && <FriendlyFallback loading variant={variant} />}
         <Canvas
           camera={{ position: [0, 0.2, compact ? 7.2 : 7.4], fov: 33 }}
           dpr={[1, 1.65]}
           frameloop={!visible || reducedMotion ? 'demand' : 'always'}
           gl={{ antialias: true, alpha: true, powerPreference: 'low-power' }}
           style={{ width: '100%', height: '100%', opacity: ready ? 1 : 0, transition: 'opacity 0.5s ease', position: 'relative' }}
-          fallback={<CanvasUnavailable onFailure={onFailure} isSpeaking={isSpeaking} />}
+          // Canvas mounts its fallback as canvas children even when WebGL works.
+          // Keep it free of effects; rendering failures are handled by the boundary.
+          fallback={fallback}
           onCreated={({ gl, camera }) => {
             camera.lookAt(0, 0.06, 0)
             gl.setClearColor('#000000', 0)
           }}
         >
-          <ambientLight intensity={1.85} />
-          <hemisphereLight args={['#fffaf0', '#8a9f76', 1.5]} />
-          <directionalLight position={[-3, 5, 6]} intensity={3.2} color="#fffaf1" />
-          <directionalLight position={[4, 2, -3]} intensity={2.8} color="#e9f9c6" />
+          <ambientLight intensity={variant === 'robot' ? 1.85 : 0.5} />
+          <hemisphereLight args={['#fffaf0', '#8a9f76', variant === 'robot' ? 1.5 : 0.55]} />
+          <directionalLight position={[-3, 5, 6]} intensity={variant === 'robot' ? 3.2 : 1.35} color="#fffaf1" />
+          <directionalLight position={[4, 2, -3]} intensity={variant === 'robot' ? 2.8 : 0.8} color="#e9f9c6" />
           <WebGLContextGuard onFailure={onFailure} />
           <SoftStage compact={compact} />
-          <Robot isSpeaking={isSpeaking} isThinking={isThinking} isListening={isListening} greeting={greeting} reducedMotion={reducedMotion} onReady={onReady} onFailure={onFailure} />
+          {variant === 'robot'
+            ? <Robot isSpeaking={isSpeaking} isThinking={isThinking} isListening={isListening} greeting={greeting} reducedMotion={reducedMotion} onReady={onReady} onFailure={onFailure} />
+            : <AnimeAvatar isSpeaking={isSpeaking} isThinking={isThinking} isListening={isListening} greeting={greeting} reducedMotion={reducedMotion} compact={compact} onReady={onReady} onFailure={onFailure} />}
         </Canvas>
       </AvatarErrorBoundary>}
     </div>

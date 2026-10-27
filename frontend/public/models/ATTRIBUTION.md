@@ -1,5 +1,23 @@
 # Nusa AI avatar
 
+The default companion is the local **AvatarSample_D (Darkness)** VRM avatar by
+**VRoid project / VRoidプロジェクト**:
+
+- Local file: `.candidate-darkness/AvatarSample_D_Darkness.vrm` (21,043,628 bytes).
+- Format: VRM 0.x, with embedded humanoid rig, expressions, textures, and spring bones.
+- License: **CC0**, as declared in the file's `extensions.VRM.meta.licenseName`.
+- Embedded author: `VRoidプロジェクト`; embedded title: `AvatarSample_D`.
+- The sample's embedded usage metadata permits use by everyone, commercial use,
+  modification, and redistribution.
+
+The binary is unchanged. Nusa animates its normalized humanoid bones and VRM
+expressions at runtime for breathing, looking, blinking, waving, thinking,
+listening, and mouth movement during a response. It is an original sample
+character, not Misa Amane or another licensed franchise character. Model loading
+uses only the local asset and requires no external avatar service.
+
+The optional robot variant remains available:
+
 - Local asset: nusa-robot.glb (463,988 bytes).
 - Original model: **RobotExpressive**, by **Tomás Laulhé / Quaternius**.
 - Original creator: https://www.patreon.com/quaternius

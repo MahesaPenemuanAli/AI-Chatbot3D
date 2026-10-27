@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Models\ChatSession;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
@@ -49,7 +48,7 @@ class ChatSessionAccessTest extends TestCase
     public function test_a_user_can_create_a_uuid_session_and_receive_a_reply(): void
     {
         // The fake HTTP response keeps this test offline even if a real key is configured.
-        Env::getRepository()->set('GEMINI_API_KEY', 'nusa-test-only-key');
+        config(['services.gemini.key' => 'nusa-test-only-key']);
         Http::preventStrayRequests();
         Http::fake([
             'generativelanguage.googleapis.com/*' => Http::response([

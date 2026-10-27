@@ -23,7 +23,7 @@ class GeminiChatService
     {
         $key = trim((string) config('services.gemini.key'));
         if ($key === '') {
-            throw new ChatServiceException('Layanan AI belum dikonfigurasi di server.', 'AI_NOT_CONFIGURED');
+            throw new ChatServiceException('Layanan AI belum dikonfigurasi di server. Tambahkan GEMINI_API_KEY melalui pengaturan lingkungan.', 'AI_NOT_CONFIGURED');
         }
 
         $models = array_unique(array_filter([
@@ -57,13 +57,17 @@ class GeminiChatService
                     $tlsError ? 'Sertifikat koneksi AI belum dapat diverifikasi. Periksa konfigurasi sertifikat server.' : 'Server belum dapat menghubungi layanan AI. Periksa koneksi lalu coba lagi.',
                     $tlsError ? 'AI_TLS_ERROR' : 'AI_CONNECTION_FAILED',
                     503,
+                    ! $tlsError,
                 );
             }
 
-            $data = $response->json() ?: [];
+            $data = $response->json();
+            $data = is_array($data) ? $data : [];
             if ($response->successful()) {
                 $candidate = $data['candidates'][0] ?? [];
+                $candidate = is_array($candidate) ? $candidate : [];
                 $parts = $candidate['content']['parts'] ?? [];
+                $parts = is_array($parts) ? array_filter($parts, 'is_array') : [];
                 $text = trim(implode("\n", array_map(
                     fn ($part) => is_string($part['text'] ?? null) && empty($part['thought']) ? $part['text'] : '',
                     $parts,
@@ -74,22 +78,25 @@ class GeminiChatService
                 if (isset($data['promptFeedback']['blockReason']) || in_array($candidate['finishReason'] ?? '', ['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT'], true)) {
                     throw new ChatServiceException('Pertanyaan ini belum dapat diproses layanan AI. Coba ubah kalimatnya.', 'AI_CONTENT_BLOCKED', 422);
                 }
-                throw new ChatServiceException('Layanan AI mengembalikan jawaban kosong. Coba kirim pertanyaan lagi.', 'AI_EMPTY_RESPONSE', 502);
+                throw new ChatServiceException('Layanan AI mengembalikan jawaban kosong. Coba kirim pertanyaan lagi.', 'AI_EMPTY_RESPONSE', 502, true);
             }
 
             $status = $response->status();
             Log::warning('Gemini request rejected', ['model' => $model, 'status' => $status]);
             if ($status === 429) {
-                throw new ChatServiceException('Batas penggunaan layanan AI sedang tercapai. Tunggu sebentar lalu coba lagi.', 'AI_RATE_LIMITED', 429);
+                throw new ChatServiceException('Batas penggunaan layanan AI sedang tercapai. Tunggu sebentar lalu coba lagi.', 'AI_RATE_LIMITED', 429, true);
             }
             $providerStatus = $data['error']['status'] ?? '';
             $invalidKey = str_contains(strtolower((string) ($data['error']['message'] ?? '')), 'api key');
             if (in_array($status, [401, 403], true) || ($status === 400 && ($invalidKey || $providerStatus === 'UNAUTHENTICATED'))) {
                 throw new ChatServiceException('Kunci layanan AI belum dapat digunakan. Periksa konfigurasi server.', 'AI_AUTH_FAILED', 503);
             }
+            if ($status === 400 || $status === 422) {
+                throw new ChatServiceException('Layanan AI belum dapat memproses pesan ini. Periksa isi pesan atau lampiran lalu coba lagi.', 'AI_REQUEST_REJECTED', 422);
+            }
             $lastError = $status === 404
                 ? new ChatServiceException('Model AI yang dipilih belum tersedia. Periksa model pada konfigurasi server.', 'AI_MODEL_UNAVAILABLE', 503)
-                : new ChatServiceException('Layanan AI sedang mengalami gangguan. Coba kirim lagi sebentar.', 'AI_PROVIDER_ERROR', 502);
+                : new ChatServiceException('Layanan AI sedang mengalami gangguan. Coba kirim lagi sebentar.', 'AI_PROVIDER_ERROR', 502, true);
 
             // A fallback helps when a model is unavailable, without repeatedly charging or
             // waiting for permanent authentication, validation, or quota failures.
@@ -101,4 +108,3 @@ class GeminiChatService
         throw $lastError ?? new ChatServiceException('Belum ada model AI yang tersedia di server.', 'AI_MODEL_UNAVAILABLE');
     }
 }
-

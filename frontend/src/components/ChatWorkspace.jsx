@@ -3,11 +3,13 @@ import { ArrowLeft, ArrowUp, AudioLines, Check, ChevronRight, Compass, Copy, Fil
 import AvatarCanvas from './AvatarCanvas'
 import ErrorBoundary from './ErrorBoundary'
 import { CHAT_PROMPTS, getDemoReply } from '../lib/travelDemo'
-import { ATTACHMENT_ACCEPT, formatFileSize, getAccountScope, isSessionVisible, serializeSessions, toServerAttachment, validateAttachmentFiles } from '../lib/chatData'
+import { ATTACHMENT_ACCEPT, formatFileSize, getAccountScope, getInitialBackendUrl, isSessionVisible, serializeSessions, toServerAttachment, validateAttachmentFiles } from '../lib/chatData'
 import './ChatWorkspace.css'
 
 const STORAGE_KEY = 'nusa_chat_v1'
 const CONFIG_KEY = 'nusa_config_v1'
+const DEFAULT_BACKEND_URL = import.meta.env.VITE_API_URL?.trim() || '/api'
+const PROVIDER_SETUP_MESSAGE = 'AI langsung belum diaktifkan oleh pengelola layanan. Kamu tetap bisa mencoba percakapan demo.'
 const uid = () => globalThis.crypto?.randomUUID?.() || `nusa-${Date.now()}-${Math.random().toString(36).slice(2)}`
 const makeSession = (mode = 'demo', accountScope = null) => ({ id: uid(), title: 'Petualangan baru', mode, accountScope, messages: [], updated: Date.now() })
 const readStorage = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) || fallback } catch { return fallback } }
@@ -49,14 +51,16 @@ export default function ChatWorkspace({ onBack, initialPrompt = '' }) {
   const [sidebar, setSidebar] = useState(false)
   const [settings, setSettings] = useState(false)
   const [notice, setNotice] = useState('')
+  const [canRetry, setCanRetry] = useState(false)
   const [copied, setCopied] = useState(null)
   const [config, setConfig] = useState(() => {
     const saved = readStorage(CONFIG_KEY, {})
-    return { backendUrl: typeof saved.backendUrl === 'string' ? saved.backendUrl : 'http://localhost:8000/api' }
+    return { backendUrl: getInitialBackendUrl(saved.backendUrl, DEFAULT_BACKEND_URL) }
   })
   const [token, setToken] = useState(() => { try { return localStorage.getItem('sanctum_token') || '' } catch { return '' } })
   const [user, setUser] = useState(() => readStorage('user_data', null))
   const [connection, setConnection] = useState('demo')
+  const [provider, setProvider] = useState({ state: 'checking', message: 'Memeriksa layanan AI…' })
   const [verifiedScope, setVerifiedScope] = useState(null)
   const [authMode, setAuthMode] = useState('login')
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', password_confirmation: '' })
@@ -81,6 +85,7 @@ export default function ChatWorkspace({ onBack, initialPrompt = '' }) {
   const accountVersionRef = useRef(0)
   const backendUrl = config.backendUrl.replace(/\/+$/, '')
   const remoteReady = Boolean(token && connection === 'live' && verifiedScope && verifiedScope === getAccountScope(user, backendUrl))
+  const aiReady = remoteReady && provider.state === 'configured'
   const accountScope = remoteReady ? verifiedScope : null
   const visibleSessions = sessions.filter(session => isSessionVisible(session, accountScope))
   const active = visibleSessions.find(s => s.id === activeId) || visibleSessions[0]
@@ -118,7 +123,7 @@ export default function ChatWorkspace({ onBack, initialPrompt = '' }) {
     recognitionRef.current?.abort()
     speechVersionRef.current += 1
     globalThis.speechSynthesis?.cancel()
-    if (update && mountedRef.current) { setStatus('idle'); setSpeaking(false); setListening(false) }
+    if (update && mountedRef.current) { setStatus('idle'); setSpeaking(false); setListening(false); setCanRetry(false) }
   }, [releaseFiles])
 
   useEffect(() => {
@@ -137,6 +142,22 @@ export default function ChatWorkspace({ onBack, initialPrompt = '' }) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: status === 'responding' ? 'instant' : 'smooth', block: 'nearest' })
   }, [messages.length, latestContent, status])
+  useEffect(() => {
+    const controller = new AbortController()
+    setProvider({ state: 'checking', message: 'Memeriksa layanan AI…' })
+    fetch(`${backendUrl}/status`, { headers: { Accept: 'application/json' }, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]) })
+      .then(async response => {
+        if (!response.ok) throw new Error('unavailable')
+        const data = await response.json()
+        if (typeof data.configured !== 'boolean') throw new Error('invalid-status')
+        if (!controller.signal.aborted) setProvider(data.configured
+          ? { state: 'configured', message: 'Layanan AI siap dicoba. Jawaban memerlukan koneksi ke penyedia AI.' }
+          : { state: 'missing', message: PROVIDER_SETUP_MESSAGE })
+      }).catch(() => {
+        if (!controller.signal.aborted) setProvider({ state: 'offline', message: 'Layanan AI belum dapat dihubungi. Percakapan demo tetap bisa digunakan.' })
+      })
+    return () => controller.abort()
+  }, [backendUrl, connectionAttempt])
   useEffect(() => {
     if (!token) { setConnection('demo'); setVerifiedScope(null); return }
     const controller = new AbortController()
@@ -203,6 +224,7 @@ export default function ChatWorkspace({ onBack, initialPrompt = '' }) {
     let session = active
     if (!session) { session = makeSession(remoteReady ? 'live' : 'demo', accountScope); setSessions(prev => [session, ...prev]); setActiveId(session.id) }
     if (session.mode === 'live' && !remoteReady) { setNotice('Masuk kembali dan pastikan layanan AI terhubung, atau buat percakapan demo baru.'); setSettings(true); return }
+    if (session.mode === 'live' && provider.state !== 'configured') { setNotice(provider.message); return }
     const sessionId = session.id
     const sessionScope = session.accountScope
     const retryMessageId = retry && lastMessageRef.current?.sessionId === sessionId ? lastMessageRef.current.messageId : null
@@ -250,21 +272,26 @@ export default function ChatWorkspace({ onBack, initialPrompt = '' }) {
       return
     }
     requestRef.current.timer = setTimeout(() => {
-      if (valid()) { finishFiles('failed'); controller.abort(); setStatus('idle'); setNotice('Layanan AI memerlukan waktu lebih lama. Coba kirim lagi sebentar.'); }
-    }, 90000)
+      if (valid()) { finishFiles('failed'); controller.abort(); setStatus('idle'); setCanRetry(true); setNotice('Layanan AI memerlukan waktu lebih lama. Coba kirim lagi sebentar.'); }
+    }, 65000)
     try {
       const body = new FormData()
       body.append('message', prompt)
-      body.append('model', 'gemini-2.5-flash')
       files.forEach((item, index) => body.append(`attachments[${index}]`, item.file, item.file.name))
       const response = await fetch(`${backendUrl}/chat/sessions/${encodeURIComponent(sessionId)}/messages`, {
         method: 'POST', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
         body, signal: controller.signal,
       })
       const data = await response.json().catch(() => ({}))
+      if (!valid()) return
       if (!response.ok) {
-        const error = new Error(response.status === 401 ? 'Sesi masukmu berakhir. Silakan masuk kembali.' : response.status === 413 ? 'Berkas melebihi batas unggahan layanan. Kurangi ukuran lampiran lalu coba lagi.' : response.status === 422 ? Object.values(data.errors || {}).flat().join(' ') || 'Lampiran atau pesan belum dapat diterima layanan.' : 'Layanan AI belum dapat menjawab. Periksa koneksi dan pengaturan layanan, lalu coba lagi.')
+        const serverMessage = data.code === 'AI_NOT_CONFIGURED' ? PROVIDER_SETUP_MESSAGE : typeof data.message === 'string' && typeof data.code === 'string' && data.code.startsWith('AI_') ? data.message : ''
+        const error = new Error(response.status === 401 ? 'Sesi masukmu berakhir. Silakan masuk kembali.' : response.status === 413 ? 'Berkas melebihi batas unggahan layanan. Kurangi ukuran lampiran lalu coba lagi.' : serverMessage || (response.status === 422 ? Object.values(data.errors || {}).flat().join(' ') || 'Lampiran atau pesan belum dapat diterima layanan.' : 'Layanan AI belum dapat menjawab. Periksa koneksi dan pengaturan layanan, lalu coba lagi.'))
         error.authExpired = response.status === 401
+        error.retryable = data.retryable !== false && !error.authExpired
+        if (['AI_NOT_CONFIGURED', 'AI_AUTH_FAILED', 'AI_TLS_ERROR', 'AI_MODEL_UNAVAILABLE'].includes(data.code)) {
+          setProvider({ state: 'blocked', message: data.code === 'AI_NOT_CONFIGURED' ? PROVIDER_SETUP_MESSAGE : error.message })
+        }
         throw error
       }
       if (typeof data.ai_message?.content !== 'string') throw new Error('Jawaban tidak dapat dibaca. Coba kirim lagi.')
@@ -275,7 +302,7 @@ export default function ChatWorkspace({ onBack, initialPrompt = '' }) {
     } catch (error) {
       clearTimeout(requestRef.current.timer)
       if (valid()) {
-        finishFiles(error.authExpired ? 'canceled' : 'failed'); setStatus('idle'); setNotice(error.message)
+        finishFiles(error.authExpired ? 'canceled' : 'failed'); setStatus('idle'); setNotice(error.message === 'Failed to fetch' ? 'Koneksi ke layanan terputus. Periksa koneksi lalu coba kirim kembali.' : error.message); setCanRetry(error.retryable !== false)
         if (error.authExpired) {
           setVerifiedScope(null); setConnection('demo'); setToken(''); setUser(null); accountVersionRef.current += 1
           try { localStorage.removeItem('sanctum_token'); localStorage.removeItem('user_data') } catch {}
@@ -283,7 +310,7 @@ export default function ChatWorkspace({ onBack, initialPrompt = '' }) {
         }
       }
     }
-  }, [accountScope, active, backendUrl, cancelWork, clearAttachments, releaseFiles, remoteReady, speak, status, token, voice])
+  }, [accountScope, active, backendUrl, cancelWork, clearAttachments, provider, releaseFiles, remoteReady, speak, status, token, voice])
 
   useEffect(() => {
     if (!initialPrompt || initialRef.current) return
@@ -393,7 +420,7 @@ export default function ChatWorkspace({ onBack, initialPrompt = '' }) {
       try { localStorage.setItem('sanctum_token', data.token) } catch {}
       writeStorage('user_data', data.user)
       const session = makeSession('live', newScope)
-      setSessions(prev => [session, ...prev]); setActiveId(session.id); setSettings(false); setNotice('Akun terhubung. Mulai percakapan baru dengan Nusa AI.'); setAuthForm({ name: '', email: '', password: '', password_confirmation: '' })
+      setSessions(prev => [session, ...prev]); setActiveId(session.id); setSettings(false); setNotice(provider.state === 'configured' ? 'Akun terhubung. Kamu dapat mencoba percakapan AI sekarang.' : `Akun terhubung. ${provider.message}`); setAuthForm({ name: '', email: '', password: '', password_confirmation: '' })
       // Merge the account's saved sessions without replacing local demo history.
       fetch(`${backendUrl}/chat/sessions`, { headers: { Accept: 'application/json', Authorization: `Bearer ${data.token}` }, signal: AbortSignal.timeout(10000) })
         .then(r => r.ok ? r.json() : []).then(async remote => {
@@ -437,12 +464,14 @@ export default function ChatWorkspace({ onBack, initialPrompt = '' }) {
     </aside>
 
     <main className="chat-main">
-      <header className="chat-topbar"><div className="chat-heading"><button className="chat-icon-button chat-menu" aria-label="Buka riwayat" onClick={() => setSidebar(true)}><Menu size={21}/></button><button className="chat-icon-button chat-back" aria-label="Kembali ke beranda" onClick={() => { cancelWork(); onBack?.() }}><ArrowLeft size={18}/></button><div><strong>Ruang jelajah</strong><span>Bersama Nusa, teman perjalananmu</span></div></div><div className="chat-top-actions"><span className={`chat-mode ${active?.mode === 'live' && remoteReady ? 'is-live' : ''}`}><i/>{active?.mode === 'live' && remoteReady ? 'AI terhubung' : active?.mode === 'live' ? 'AI belum terhubung' : 'Mode demo'}</span><button className={`chat-icon-button ${voice ? 'is-enabled' : ''}`} onClick={toggleVoice} title={voice ? 'Matikan suara otomatis' : 'Aktifkan suara otomatis'} aria-label={voice ? 'Matikan suara otomatis' : 'Aktifkan suara otomatis'} aria-pressed={voice}>{voice ? <Volume2 size={19}/> : <VolumeX size={19}/>}</button><button className="chat-icon-button" aria-label="Pengaturan dan akun" onClick={() => setSettings(true)}><Settings2 size={19}/></button></div></header>
+      <header className="chat-topbar"><div className="chat-heading"><button className="chat-icon-button chat-menu" aria-label="Buka riwayat" onClick={() => setSidebar(true)}><Menu size={21}/></button><button className="chat-icon-button chat-back" aria-label="Kembali ke beranda" onClick={() => { cancelWork(); onBack?.() }}><ArrowLeft size={18}/></button><div><strong>Ruang jelajah</strong><span>Bersama Nusa, teman perjalananmu</span></div></div><div className="chat-top-actions"><span className={`chat-mode ${active?.mode === 'live' && aiReady ? 'is-live' : ''}`}><i/>{active?.mode === 'live' ? aiReady ? 'AI siap dicoba' : provider.state === 'checking' ? 'Memeriksa AI' : 'AI belum tersedia' : 'Mode demo'}</span><button className={`chat-icon-button ${voice ? 'is-enabled' : ''}`} onClick={toggleVoice} title={voice ? 'Matikan suara otomatis' : 'Aktifkan suara otomatis'} aria-label={voice ? 'Matikan suara otomatis' : 'Aktifkan suara otomatis'} aria-pressed={voice}>{voice ? <Volume2 size={19}/> : <VolumeX size={19}/>}</button><button className="chat-icon-button" aria-label="Pengaturan dan akun" onClick={() => setSettings(true)}><Settings2 size={19}/></button></div></header>
+
+      {provider.state !== 'configured' && <div className={`chat-service-status ${provider.state === 'checking' ? 'is-checking' : ''}`} role="status"><div><strong>{provider.state === 'checking' ? 'Memeriksa layanan AI' : provider.state === 'offline' ? 'Layanan belum terhubung' : 'AI langsung belum tersedia'}</strong><p>{provider.message}</p></div>{provider.state !== 'checking' && <div className="chat-service-actions"><button onClick={() => newSession(true)}>Coba demo</button><button onClick={() => setConnectionAttempt(value => value + 1)}>Periksa lagi</button></div>}</div>}
 
       {isMobile && <div className="chat-mobile-companion"><div className="chat-mobile-avatar"><ErrorBoundary fallback={<Leaf size={35}/>}><AvatarCanvas isSpeaking={status === 'responding' || speaking} isThinking={status === 'thinking'} isListening={listening} greeting={greeting} compact/></ErrorBoundary></div><div><span>TEMAN JELAJAHMU</span><strong>Nusa <i/></strong><p>{avatarStatus}</p></div><button onClick={() => setGreeting(v => v + 1)} aria-label="Sapa Nusa">👋<span>Sapa Nusa</span></button></div>}
 
       <div className={`chat-conversation ${messages.length ? 'has-messages' : ''}`}>
-        {!messages.length ? <div className="chat-welcome"><span className="chat-welcome-eyebrow"><span/> BANYAK CERITA MENANTIMU</span><div className="chat-welcome-mark"><Compass size={31} strokeWidth={1.5}/><span>✦</span></div><h1>Mau ke mana<br/><span>kita hari ini?</span></h1><p>Dari rencana spontan sampai perjalanan impian.<br/>Ceritakan idemu, kita mulai dari sana.</p><div className="chat-prompt-grid">{CHAT_PROMPTS.map(prompt => { const Icon = ICONS[prompt.icon]; return <button key={prompt.label} onClick={() => sendMessage(prompt.prompt)} disabled={busy}><Icon size={21} strokeWidth={1.6}/><strong>{prompt.label}</strong><span>{prompt.detail}</span><ChevronRight size={15}/></button> })}</div><span className="chat-demo-note">{active?.mode === 'live' ? 'Percakapanmu diteruskan ke layanan AI yang terhubung.' : 'Kamu sedang mencoba jawaban contoh. Masuk untuk percakapan AI personal.'}</span></div> : <div className="chat-message-list">
+        {!messages.length ? <div className="chat-welcome"><span className="chat-welcome-eyebrow"><span/> BANYAK CERITA MENANTIMU</span><div className="chat-welcome-mark"><Compass size={31} strokeWidth={1.5}/><span>✦</span></div><h1>Mau ke mana<br/><span>kita hari ini?</span></h1><p>Dari rencana spontan sampai perjalanan impian.<br/>Ceritakan idemu, kita mulai dari sana.</p><div className="chat-prompt-grid">{CHAT_PROMPTS.map(prompt => { const Icon = ICONS[prompt.icon]; return <button key={prompt.label} onClick={() => sendMessage(prompt.prompt)} disabled={busy}><Icon size={21} strokeWidth={1.6}/><strong>{prompt.label}</strong><span>{prompt.detail}</span><ChevronRight size={15}/></button> })}</div><span className="chat-demo-note">{active?.mode === 'live' ? aiReady ? 'Pesanmu akan diteruskan ke layanan AI. Periksa kembali informasi penting.' : provider.message : 'Kamu sedang mencoba jawaban contoh. Masuk untuk percakapan AI personal.'}</span></div> : <div className="chat-message-list">
           <div className="chat-day-label"><span/> Petualangan hari ini <span/></div>
           {messages.map((message, index) => <article key={message.id} className={`chat-message chat-message-${message.role}`}>
             <div className="chat-message-avatar">{message.role === 'assistant' ? <Leaf size={18}/> : user?.name?.slice(0, 1).toUpperCase() || 'K'}</div>
@@ -458,7 +487,7 @@ export default function ChatWorkspace({ onBack, initialPrompt = '' }) {
         </div>}
       </div>
 
-      <div className="chat-compose-area">{notice && <div className="chat-notice" role="status"><span>{notice}</span><button aria-label="Tutup pemberitahuan" onClick={() => setNotice('')}><X size={15}/></button>{!busy && lastMessageRef.current?.sessionId === active?.id && /coba|belum dapat menjawab/i.test(notice) && <button className="chat-retry" onClick={() => sendMessage(lastPromptRef.current, true)}>Coba lagi</button>}</div>}
+      <div className="chat-compose-area">{notice && <div className="chat-notice" role="status"><span>{notice}</span><button aria-label="Tutup pemberitahuan" onClick={() => setNotice('')}><X size={15}/></button>{!busy && lastMessageRef.current?.sessionId === active?.id && canRetry && <button className="chat-retry" onClick={() => sendMessage(lastPromptRef.current, true)}>Coba lagi</button>}</div>}
         {listening && <div className="chat-listening" role="status"><AudioLines size={16}/> Mendengarkan… pesan akan muncul di kotak di bawah.</div>}
         <form className={`chat-composer ${listening ? 'is-listening' : ''}`} onSubmit={event => { event.preventDefault(); sendMessage(input) }}>
           {attachments.length > 0 && <><div className="chat-selected-files" aria-label="Lampiran yang dipilih">{attachments.map(item => {
@@ -476,10 +505,11 @@ export default function ChatWorkspace({ onBack, initialPrompt = '' }) {
       </div>
     </main>
 
-    {!isMobile && <aside className="chat-companion"><div className="chat-companion-top"><span className="chat-section-label">TEMAN JELAJAHMU</span><span className="chat-companion-live"><i/> 3D AKTIF</span></div><div className="chat-avatar-stage"><div className="chat-avatar-orbit"/><span className="chat-avatar-spark chat-avatar-spark-one">✦</span><span className="chat-avatar-spark chat-avatar-spark-two">✧</span><ErrorBoundary fallback={<div className="chat-avatar-fallback"><Leaf size={70}/><p>Halo, aku Nusa!</p></div>}><AvatarCanvas isSpeaking={status === 'responding' || speaking} isThinking={status === 'thinking'} isListening={listening} greeting={greeting} compact/></ErrorBoundary><button className="chat-wave-button" onClick={() => setGreeting(v => v + 1)} aria-label="Sapa Nusa">👋 Sapa Nusa</button></div><div className="chat-companion-name"><h2>Nusa <span>✦</span></h2><p>Partner kecil, petualangan besar.</p><span className={`chat-avatar-status ${busy || speaking || listening ? 'is-animated' : ''}`}><i/>{avatarStatus}</span></div><div className="chat-companion-tip"><span><Sun size={18}/> CATATAN PERJALANAN</span><p>Perjalanan terbaik bukan selalu yang terjauh. Kadang, cukup mulai dengan tempat yang belum pernah kamu lihat.</p><div/><small>Rasa penasaran adalah kompasmu. <Compass size={14}/></small></div><div className="chat-companion-foot"><ShieldCheck size={15}/> Riwayat tersimpan di perangkat ini.</div></aside>}
+    {!isMobile && <aside className="chat-companion"><div className="chat-companion-top"><span className="chat-section-label">TEMAN JELAJAHMU</span><span className="chat-companion-live"><i/> AVATAR 3D</span></div><div className="chat-avatar-stage"><div className="chat-avatar-orbit"/><span className="chat-avatar-spark chat-avatar-spark-one">✦</span><span className="chat-avatar-spark chat-avatar-spark-two">✧</span><ErrorBoundary fallback={<div className="chat-avatar-fallback"><Leaf size={70}/><p>Halo, aku Nusa!</p></div>}><AvatarCanvas isSpeaking={status === 'responding' || speaking} isThinking={status === 'thinking'} isListening={listening} greeting={greeting} compact/></ErrorBoundary><button className="chat-wave-button" onClick={() => setGreeting(v => v + 1)} aria-label="Sapa Nusa">👋 Sapa Nusa</button></div><div className="chat-companion-name"><h2>Nusa <span>✦</span></h2><p>Partner kecil, petualangan besar.</p><span className={`chat-avatar-status ${busy || speaking || listening ? 'is-animated' : ''}`}><i/>{avatarStatus}</span></div><div className="chat-companion-tip"><span><Sun size={18}/> CATATAN PERJALANAN</span><p>Perjalanan terbaik bukan selalu yang terjauh. Kadang, cukup mulai dengan tempat yang belum pernah kamu lihat.</p><div/><small>Rasa penasaran adalah kompasmu. <Compass size={14}/></small></div><div className="chat-companion-foot"><ShieldCheck size={15}/> Riwayat tersimpan di perangkat ini.</div></aside>}
 
     {settings && <div className="chat-modal-overlay" onClick={event => { if (event.target === event.currentTarget) setSettings(false) }}><section className="chat-settings-modal" role="dialog" aria-modal="true" aria-labelledby="chat-settings-title" ref={settingsRef}><div className="chat-modal-header"><span className="chat-logo"><Leaf size={21}/></span><button className="chat-icon-button" onClick={() => setSettings(false)} aria-label="Tutup pengaturan"><X size={21}/></button></div><h2 id="chat-settings-title">Jelajah lebih personal.</h2><p>Hubungkan akunmu untuk mengobrol langsung dengan Nusa AI.</p><div className="chat-account-status"><i className={remoteReady ? 'is-live' : ''}/>{connection === 'checking' ? 'Memeriksa koneksi…' : remoteReady ? `Terhubung sebagai ${user?.name || 'Kawan Nusa'}` : connection === 'offline' ? 'Layanan belum terhubung' : 'Kamu sedang mencoba mode demo'}</div>
-      {user && token ? <div className="chat-account-detail"><strong>{user.name}</strong><span>{user.email}</span><button onClick={logout}><LogOut size={16}/> Keluar dari akun</button>{connection === 'offline' && <button onClick={() => setConnectionAttempt(v => v + 1)}>Coba hubungkan kembali</button>}{remoteReady && active?.mode === 'demo' && <button className="chat-auth-submit" onClick={() => { setSettings(false); newSession() }}>Mulai percakapan AI <ChevronRight size={16}/></button>}</div> : <><div className="chat-auth-tabs"><button className={authMode === 'login' ? 'is-active' : ''} onClick={() => { setAuthMode('login'); setAuthError('') }}>Masuk</button><button className={authMode === 'register' ? 'is-active' : ''} onClick={() => { setAuthMode('register'); setAuthError('') }}>Buat akun</button></div><form onSubmit={authenticate}>{authMode === 'register' && <label>Nama<input name="name" autoComplete="name" value={authForm.name} onChange={event => setAuthForm({ ...authForm, name: event.target.value })} required placeholder="Nama panggilanmu"/></label>}<label>Email<input type="email" autoComplete="email" name="email" value={authForm.email} onChange={event => setAuthForm({ ...authForm, email: event.target.value })} required placeholder="kamu@email.com"/></label><label>Kata sandi<input type="password" name="password" autoComplete={authMode === 'register' ? 'new-password' : 'current-password'} minLength={authMode === 'register' ? 8 : 1} value={authForm.password} onChange={event => setAuthForm({ ...authForm, password: event.target.value })} required placeholder={authMode === 'register' ? 'Minimal 8 karakter' : 'Kata sandi akunmu'}/></label>{authMode === 'register' && <label>Ulangi kata sandi<input type="password" autoComplete="new-password" name="password_confirmation" minLength={8} value={authForm.password_confirmation} onChange={event => setAuthForm({ ...authForm, password_confirmation: event.target.value })} required placeholder="Ketik sekali lagi"/></label>}{authError && <div className="chat-auth-error" role="alert">{authError}</div>}<button className="chat-auth-submit" type="submit" disabled={authBusy}>{authBusy ? <LoaderCircle size={18} className="chat-spinner"/> : authMode === 'register' ? 'Buat akun & mulai jelajah' : 'Masuk & mulai jelajah'}<ChevronRight size={17}/></button></form></>}
-      <details className="chat-advanced"><summary>Pengaturan koneksi</summary><label>Alamat layanan<input type="url" value={config.backendUrl} onChange={event => setConfig({ ...config, backendUrl: event.target.value })} placeholder="http://localhost:8000/api"/></label><small>Gunakan alamat API Laravel milikmu. Kunci layanan AI dikelola di server.</small></details><div className="chat-modal-footer"><Headphones size={16}/><span>Suara menggunakan fitur yang tersedia di browser.</span></div></section></div>}
+      {user && token ? <div className="chat-account-detail"><strong>{user.name}</strong><span>{user.email}</span><button onClick={logout}><LogOut size={16}/> Keluar dari akun</button>{connection === 'offline' && <button onClick={() => setConnectionAttempt(v => v + 1)}>Coba hubungkan kembali</button>}{remoteReady && active?.mode === 'demo' && <button disabled={!aiReady} className="chat-auth-submit" onClick={() => { setSettings(false); newSession() }}>Mulai percakapan AI <ChevronRight size={16}/></button>}</div> : <><div className="chat-auth-tabs"><button className={authMode === 'login' ? 'is-active' : ''} onClick={() => { setAuthMode('login'); setAuthError('') }}>Masuk</button><button className={authMode === 'register' ? 'is-active' : ''} onClick={() => { setAuthMode('register'); setAuthError('') }}>Buat akun</button></div><form onSubmit={authenticate}>{authMode === 'register' && <label>Nama<input name="name" autoComplete="name" value={authForm.name} onChange={event => setAuthForm({ ...authForm, name: event.target.value })} required placeholder="Nama panggilanmu"/></label>}<label>Email<input type="email" autoComplete="email" name="email" value={authForm.email} onChange={event => setAuthForm({ ...authForm, email: event.target.value })} required placeholder="kamu@email.com"/></label><label>Kata sandi<input type="password" name="password" autoComplete={authMode === 'register' ? 'new-password' : 'current-password'} minLength={authMode === 'register' ? 8 : 1} value={authForm.password} onChange={event => setAuthForm({ ...authForm, password: event.target.value })} required placeholder={authMode === 'register' ? 'Minimal 8 karakter' : 'Kata sandi akunmu'}/></label>{authMode === 'register' && <label>Ulangi kata sandi<input type="password" autoComplete="new-password" name="password_confirmation" minLength={8} value={authForm.password_confirmation} onChange={event => setAuthForm({ ...authForm, password_confirmation: event.target.value })} required placeholder="Ketik sekali lagi"/></label>}{authError && <div className="chat-auth-error" role="alert">{authError}</div>}<button className="chat-auth-submit" type="submit" disabled={authBusy}>{authBusy ? <LoaderCircle size={18} className="chat-spinner"/> : authMode === 'register' ? 'Buat akun & mulai jelajah' : 'Masuk & mulai jelajah'}<ChevronRight size={17}/></button></form></>}
+      <div className="chat-provider-state"><strong>{provider.state === 'configured' ? 'AI siap dicoba' : provider.state === 'checking' ? 'Memeriksa AI…' : 'AI belum tersedia'}</strong><p>{provider.message}</p><button onClick={() => setConnectionAttempt(value => value + 1)}>Periksa layanan</button>{provider.state !== 'configured' && <button onClick={() => { setSettings(false); newSession(true) }}>Coba demo</button>}</div>
+      <details className="chat-advanced"><summary>Pengaturan koneksi</summary><label>Alamat layanan<input type="text" inputMode="url" value={config.backendUrl} onChange={event => setConfig({ ...config, backendUrl: event.target.value })} placeholder="/api"/></label><small>Alamat bawaan /api terhubung ke layanan aplikasi. Gunakan alamat khusus hanya jika diarahkan pengelola. Kunci AI disimpan di server.</small></details><div className="chat-modal-footer"><Headphones size={16}/><span>Suara menggunakan fitur yang tersedia di browser.</span></div></section></div>}
   </div>
 }

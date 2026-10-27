@@ -3,11 +3,26 @@ export const MAX_ATTACHMENT_COUNT = 4
 export const ATTACHMENT_ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,image/avif,image/heic,image/heif,audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/ogg,audio/flac,audio/aac,audio/mp4,audio/webm,video/mp4,video/webm,video/quicktime,video/mpeg,video/3gpp'
 const ALLOWED_TYPES = new Set(ATTACHMENT_ACCEPT.split(','))
 
-export function getAccountScope(account, backendUrl) {
+export function getInitialBackendUrl(savedUrl, defaultUrl = '/api') {
+  const saved = typeof savedUrl === 'string' ? savedUrl.trim().replace(/\/+$/, '') : ''
+  // Earlier versions saved the developer's machine as the API address. A
+  // relative default also works when this UI is opened from another device.
+  if (!saved || /^https?:\/\/(localhost|127\.0\.0\.1):8000\/api$/i.test(saved)) {
+    return defaultUrl.trim().replace(/\/+$/, '') || '/api'
+  }
+  return saved
+}
+
+function resolveApiUrl(backendUrl, origin = globalThis.location?.origin) {
+  const url = new URL(backendUrl, origin)
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid API address')
+  return url
+}
+
+export function getAccountScope(account, backendUrl, origin) {
   if (account?.id === undefined || account?.id === null) return null
   try {
-    const url = new URL(backendUrl)
-    if (!['http:', 'https:'].includes(url.protocol)) return null
+    const url = resolveApiUrl(backendUrl, origin)
     return `${url.origin}${url.pathname.replace(/\/+$/, '')}::${String(account.id)}`
   } catch { return null }
 }
@@ -31,7 +46,7 @@ export function formatFileSize(bytes) {
   return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
 }
 
-export function toServerAttachment(attachment, backendUrl) {
+export function toServerAttachment(attachment, backendUrl, origin) {
   const name = attachment.file_name || attachment.name || 'Lampiran'
   const type = attachment.mime_type || attachment.type || ''
   let url = null
@@ -39,7 +54,7 @@ export function toServerAttachment(attachment, backendUrl) {
   // Media previews must remain within the selected API's own storage directory.
   if (typeof path === 'string' && /^storage\/attachments\/[\w./-]+$/.test(path) && !path.split('/').includes('..')) {
     try {
-      const api = new URL(`${backendUrl.replace(/\/+$/, '')}/`)
+      const api = resolveApiUrl(`${backendUrl.replace(/\/+$/, '')}/`, origin)
       const candidate = new URL(path, new URL('../', api))
       if (candidate.origin === api.origin) url = candidate.href
     } catch { /* The filename is still useful if a media URL cannot be resolved. */ }
