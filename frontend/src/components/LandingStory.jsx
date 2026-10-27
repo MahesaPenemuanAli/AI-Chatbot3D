@@ -17,11 +17,16 @@ export default function LandingStory({ openChat }) {
   useEffect(() => {
     const root = storyRef.current
     const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const canObserve = 'IntersectionObserver' in window
     let frame = 0
     let inView = true
     const update = () => {
       frame = 0
       const rect = root.getBoundingClientRect()
+      if (!canObserve) {
+        inView = rect.bottom > 0 && rect.top < window.innerHeight
+        setActive(inView && !document.hidden)
+      }
       const value = clamp(-rect.top / Math.max(1, rect.height - window.innerHeight))
       progressRef.current = value
       root.style.setProperty('--story-progress', value)
@@ -29,12 +34,12 @@ export default function LandingStory({ openChat }) {
     const schedule = () => { if (!frame) frame = requestAnimationFrame(update) }
     const visibility = () => setActive(inView && !document.hidden)
     const motion = () => setReducedMotion(media.matches)
-    const observer = new IntersectionObserver(([entry]) => {
+    const observer = canObserve ? new IntersectionObserver(([entry]) => {
       inView = entry.isIntersecting
       visibility()
       schedule()
-    })
-    observer.observe(root)
+    }) : null
+    observer?.observe(root)
     window.addEventListener('scroll', schedule, { passive: true })
     window.addEventListener('resize', schedule)
     document.addEventListener('visibilitychange', visibility)
@@ -42,7 +47,7 @@ export default function LandingStory({ openChat }) {
     update()
     return () => {
       cancelAnimationFrame(frame)
-      observer.disconnect()
+      observer?.disconnect()
       window.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', schedule)
       document.removeEventListener('visibilitychange', visibility)

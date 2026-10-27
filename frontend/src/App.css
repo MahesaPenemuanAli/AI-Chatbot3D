@@ -215,6 +215,13 @@
 .app-loading { min-height:100dvh; background:#f1f4e8; }
 .avatar-loading { height:100%; }
 .app-loading>svg,.avatar-loading>svg { animation:slowTurn 9s linear infinite; }
+.page-recovery { min-height:100dvh; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:28px; text-align:center; }
+.page-recovery p { max-width:420px; line-height:1.7; }
+.page-recovery>div { display:flex; flex-wrap:wrap; justify-content:center; gap:12px; }
+.page-recovery button { padding:14px 21px; border:1px solid #244430; border-radius:6px; background:transparent; color:#244430; }
+.page-recovery .button-dark { color:#fff; background:#244430; }
+.page-recovery button:focus-visible { outline:2px solid #244430; outline-offset:4px; }
+#konten:focus { outline:none; }
 .skip-link { position:fixed; top:12px; left:14px; z-index:100; padding:12px 18px; border-radius:2px; background:#d4f481; color:#173323; font-size:12px; transform:translateY(-160%); }
 .skip-link:focus { transform:none; }
 @keyframes slowTurn { to { rotate:360deg; } }

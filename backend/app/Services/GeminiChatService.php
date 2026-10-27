@@ -31,6 +31,12 @@ class GeminiChatService
             config('services.gemini.fallback_model', 'gemini-2.5-flash-lite'),
         ], fn ($model) => is_string($model) && preg_match('/^[a-zA-Z0-9._-]+$/', $model)));
         $caBundle = config('services.gemini.ca_bundle');
+        if ($caBundle !== null && $caBundle !== ''
+            && (! is_string($caBundle) || ! is_file($caBundle) || ! is_readable($caBundle))) {
+            // Guzzle throws before connecting for a missing CA file. Return a safe
+            // configuration error instead of exposing a server path in a 500.
+            throw new ChatServiceException('Sertifikat koneksi AI belum dapat digunakan. Periksa konfigurasi sertifikat server.', 'AI_TLS_ERROR', 503);
+        }
         $lastError = null;
 
         foreach ($models as $model) {

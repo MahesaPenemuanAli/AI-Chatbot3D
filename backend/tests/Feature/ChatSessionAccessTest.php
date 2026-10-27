@@ -48,7 +48,7 @@ class ChatSessionAccessTest extends TestCase
     public function test_a_user_can_create_a_uuid_session_and_receive_a_reply(): void
     {
         // The fake HTTP response keeps this test offline even if a real key is configured.
-        config(['services.gemini.key' => 'nusa-test-only-key']);
+        config(['services.gemini.key' => 'nusa-test-only-key', 'services.gemini.ca_bundle' => null]);
         Http::preventStrayRequests();
         Http::fake([
             'generativelanguage.googleapis.com/*' => Http::response([

@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { ArrowRight, ArrowUpRight, AudioLines, ChevronDown, Compass, Globe2, Menu, MessageCircle, Navigation, Sparkles, Volume2, X } from 'lucide-react'
 import LandingStory from './components/LandingStory'
 import DestinationGallery from './components/DestinationGallery'
 import CompanionIntro from './components/CompanionIntro'
 import LandingFilm from './components/LandingFilm'
+import ErrorBoundary from './components/ErrorBoundary'
 import './App.css'
 
 const ChatWorkspace = lazy(() => import('./components/ChatWorkspace'))
@@ -18,17 +19,45 @@ function Brand() {
   return <a className="brand" href="#" aria-label="Nusa AI — halaman utama"><span className="brand-symbol"><Sparkles size={19} strokeWidth={1.6}/></span><span>nusa<span className="brand-ai">ai</span><span className="brand-dot">.</span></span></a>
 }
 
+function ChatPage(props) {
+  useEffect(() => {
+    const main = document.querySelector('.chat-main')
+    main?.setAttribute('tabindex', '-1')
+    main?.focus({ preventScroll: true })
+  }, [])
+  return <ChatWorkspace {...props} />
+}
+
+function PageRecovery({ onBack }) {
+  return <main className="page-recovery" role="alert"><Sparkles size={36}/><h1>Halaman belum bisa dimuat.</h1><p>Periksa koneksi, lalu coba muat ulang untuk melanjutkan.</p><div><button className="button button-dark" onClick={() => window.location.reload()}>Muat ulang</button><button className="button" onClick={onBack}>Kembali ke beranda</button></div></main>
+}
+
 function LandingPage({ openChat }) {
+  const menuButtonRef = useRef(null)
+  const mainRef = useRef(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [faqOpen, setFaqOpen] = useState(0)
   const [demoInput, setDemoInput] = useState('')
   useEffect(() => {
+    mainRef.current?.focus({ preventScroll: true })
+    if (!('IntersectionObserver' in window)) {
+      document.querySelectorAll('[data-reveal]').forEach(element => element.classList.add('is-visible'))
+      return
+    }
     const observer = new IntersectionObserver(entries => entries.forEach(entry => {
       if (entry.isIntersecting) { entry.target.classList.add('is-visible'); observer.unobserve(entry.target) }
     }), { threshold: .08 })
     document.querySelectorAll('[data-reveal]').forEach(element => observer.observe(element))
     return () => observer.disconnect()
   }, [])
+  useEffect(() => {
+    if (!menuOpen) return
+    const onKeyDown = event => {
+      if (event.key === 'Escape') { setMenuOpen(false); menuButtonRef.current?.focus() }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [menuOpen])
   const startChat = prompt => { setMenuOpen(false); openChat(prompt) }
 
   return <div className="landing-page">
@@ -37,9 +66,9 @@ function LandingPage({ openChat }) {
       <nav id="nusa-navigation" aria-label="Navigasi utama" className={menuOpen ? 'nav-links nav-open' : 'nav-links'}>
         <a href="#rencana" onClick={() => setMenuOpen(false)}>Pengalaman</a><a href="#destinasi" onClick={() => setMenuOpen(false)}>Destinasi</a><a href="#kenalan" onClick={() => setMenuOpen(false)}>Temui Nusa</a>
       </nav>
-      <div className="nav-actions"><span className="language"><Globe2 size={13}/> ID</span><button className="nav-cta" onClick={() => startChat()}>Mulai ngobrol <ArrowUpRight size={14}/></button><button className="mobile-menu" aria-controls="nusa-navigation" aria-label={menuOpen ? 'Tutup menu' : 'Buka menu'} aria-expanded={menuOpen} onClick={() => setMenuOpen(value => !value)}>{menuOpen ? <X size={21}/> : <Menu size={21}/>}</button></div>
+      <div className="nav-actions"><span className="language"><Globe2 size={13}/> ID</span><button className="nav-cta" onClick={() => startChat()}>Mulai ngobrol <ArrowUpRight size={14}/></button><button ref={menuButtonRef} className="mobile-menu" aria-controls="nusa-navigation" aria-label={menuOpen ? 'Tutup menu' : 'Buka menu'} aria-expanded={menuOpen} onClick={() => setMenuOpen(value => !value)}>{menuOpen ? <X size={21}/> : <Menu size={21}/>}</button></div>
     </div></header>
-    <main id="konten">
+    <main ref={mainRef} id="konten" tabIndex={-1}>
       <LandingStory openChat={startChat}/>
       <DestinationGallery openChat={startChat}/>
       <section className="scenic-section section-container" aria-label="Inspirasi perjalanan ke Pulau Padar"><div className="scenic-frame"><LandingFilm/><div className="scenic-copy"><div className="eyebrow">JEDA SEJENAK. LIHAT LEBIH DEKAT.</div><h2>Selalu ada<br/>sisi <em>lain.</em></h2><button className="text-button" onClick={() => startChat('Aku ingin menjelajahi Labuan Bajo dan Pulau Padar. Bantu aku merencanakan perjalanannya.')}>Temukan Labuan Bajo <ArrowUpRight size={19}/></button></div></div></section>
@@ -67,5 +96,5 @@ export default function App() {
   useEffect(() => { document.title = page === 'chat' ? 'Ngobrol dengan Nusa — Nusa AI' : 'Nusa AI — Teman untuk setiap petualangan'; window.scrollTo(0, 0) }, [page])
   const openChat = (prompt = '') => { setInitialPrompt(prompt); setPage('chat'); window.location.hash = 'chat' }
   const backHome = () => { setInitialPrompt(''); setPage('home'); window.location.hash = ''; window.scrollTo(0, 0) }
-  return page === 'chat' ? <Suspense fallback={<div className="app-loading"><Sparkles size={30}/><p>Nusa sedang bersiap…</p></div>}><ChatWorkspace onBack={backHome} initialPrompt={initialPrompt}/></Suspense> : <LandingPage openChat={openChat}/>
+  return page === 'chat' ? <Suspense fallback={<div className="app-loading"><Sparkles size={30}/><p>Nusa sedang bersiap…</p></div>}><ErrorBoundary fallback={<PageRecovery onBack={backHome}/>}><ChatPage onBack={backHome} initialPrompt={initialPrompt}/></ErrorBoundary></Suspense> : <LandingPage openChat={openChat}/>
 }
