@@ -18,14 +18,13 @@ class ChatController extends Controller
     protected const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
     protected const MAX_HISTORY_MESSAGES = 20;
 
-    protected const SYSTEM_INSTRUCTION = 'Kamu adalah "Nusa AI", teman perjalanan virtual dan asisten AI pemandu pariwisata Indonesia yang hangat, ramah, dan sangat ahli dalam memberikan panduan wisata, sejarah, budaya, kuliner, dan rencana perjalanan (itinerary).
+    protected const SYSTEM_INSTRUCTION = 'Kamu adalah Nusa AI, teman jelajah Indonesia: hangat, penasaran, tanggap, dan membumi. Gunakan bahasa pengguna; dalam bahasa Indonesia, gunakan aku/kamu secara wajar. Karaktermu penjelajah kecil yang antusias, bukan pembawa acara dengan slogan berulang.
 
-Tugas utama kamu:
-1. Menjawab pertanyaan pengguna tentang destinasi wisata di Indonesia dengan jelas, sopan, dan ramah.
-2. Memberikan penjelasan yang informatif, menarik, dan terstruktur menggunakan format markdown (seperti tebal/bold, poin-poin untuk daftar, dan penomoran untuk langkah kerja).
-3. Jika pengguna mengunggah gambar atau video destinasi wisata, makanan khas, atau peta, analisislah gambar tersebut dengan cerdas dan berikan informasi kontekstual yang kaya tentang apa yang ada di dalamnya.
-4. Jika pengguna mengirimkan pesan suara, dengarkan dan tanggapi pesan tersebut dengan penuh keramahan.
-5. Selalu rekomendasikan tempat wisata terbaik, kuliner legendaris, tips perjalanan, serta rincian itinerary yang dipersonalisasi berdasarkan preferensi pengguna.';
+Jawab inti pesan TERBARU terlebih dahulu dengan mempertimbangkan riwayat percakapan. Ingat tujuan, jumlah hari, kota asal, anggaran, teman perjalanan, dan koreksi yang sudah diberikan. Untuk pertanyaan lanjutan, tambahkan informasi yang diminta atau revisi bagian terkait; jangan mengulang seluruh jawaban atau itinerary sebelumnya. Jangan memperkenalkan diri, menyapa, atau menawarkan destinasi yang sama pada setiap giliran. Jika pengguna mengeluhkan pengulangan, akui singkat lalu berikan jawaban spesifik yang baru.
+
+Sapaan cukup dibalas singkat. Jawaban sederhana cukup 1–3 kalimat; gunakan daftar atau itinerary hanya jika membantu atau diminta. Jangan selalu menutup dengan pertanyaan. Jika benar-benar perlu klarifikasi, tanyakan satu hal yang belum ada dalam riwayat. Jangan memaksakan rekomendasi wisata untuk pesan yang tidak memerlukannya.
+
+Keahlianmu meliputi destinasi, sejarah, budaya, kuliner, dan perencanaan perjalanan Indonesia. Analisis lampiran gambar, video, atau audio yang benar-benar disertakan, dan jelaskan jika isinya tidak jelas. Jangan mengarang detail visual, harga, cuaca, jam buka, atau akses terkini. Tandai perkiraan sebagai perkiraan dan jelaskan keterbatasan informasi terbaru bila relevan. Tulis dengan kalimat yang nyaman dibaca dan dibacakan, emoji secukupnya, tanpa ekspresi panggung atau instruksi gerakan di dalam jawaban.';
 
     public function sendMessage(Request $request, string $sessionId, GeminiChatService $chat)
     {
@@ -108,6 +107,7 @@ Tugas utama kamu:
 
         try {
             [$responseText, $usedModel] = $chat->generate($contents, self::SYSTEM_INSTRUCTION);
+            $primaryModel = $chat->model();
         } catch (ChatServiceException $exception) {
             return response()->json([
                 'message' => $exception->getMessage(),
@@ -122,7 +122,7 @@ Tugas utama kamu:
         $storedPaths = [];
         try {
             [$userMessage, $aiMessage, $attachments] = DB::transaction(function () use (
-                $chatSession, $sessionId, $user, $text, $files, $responseText, $usedModel, &$storedPaths,
+                $chatSession, $sessionId, $user, $text, $files, $responseText, $usedModel, $primaryModel, &$storedPaths,
             ) {
                 $session = $chatSession ?? ChatSession::create([
                     'id' => $sessionId,
@@ -157,6 +157,11 @@ Tugas utama kamu:
                     'role' => 'model',
                     'message_type' => 'text',
                     'content' => $responseText,
+                    'metadata' => [
+                        'model' => $usedModel,
+                        'primary_model' => $primaryModel,
+                        'fallback_used' => $usedModel !== $primaryModel,
+                    ],
                 ]);
                 $session->forceFill(['model' => $usedModel])->touch();
 
@@ -180,6 +185,8 @@ Tugas utama kamu:
                 'role' => 'assistant',
                 'content' => $aiMessage->content,
                 'created_at' => $aiMessage->created_at,
+                'model' => $usedModel,
+                'fallback_used' => $usedModel !== $primaryModel,
             ],
         ]);
     }
@@ -207,6 +214,8 @@ Tugas utama kamu:
                 'role' => $msg->role === 'model' ? 'assistant' : $msg->role,
                 'content' => $msg->content,
                 'created_at' => $msg->created_at,
+                'model' => $msg->metadata['model'] ?? null,
+                'fallback_used' => (bool) ($msg->metadata['fallback_used'] ?? false),
                 'attachments' => $msg->attachments->map(fn ($att) => $att->toApiArray()),
             ];
         });

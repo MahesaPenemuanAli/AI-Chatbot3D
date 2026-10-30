@@ -230,7 +230,7 @@ function Instrument({ progressRef, active, reducedMotion }) {
       if (progress > 0.72) return MathUtils.lerp(middle, last, MathUtils.smoothstep((progress - 0.72) / 0.28, 0, 1))
       return middle
     }
-    const fit = mobile ? Math.min(0.72, viewport.width / 5.15) : Math.min(1, viewport.width / 8)
+    const fit = mobile ? Math.min(0.72, viewport.width / 5.15) : Math.min(1, viewport.width / 9)
     const x = mobile ? interpolate(0.08, -0.12, 0) : interpolate(viewport.width * 0.19, -viewport.width * 0.2, 0)
     const y = mobile ? interpolate(-1.68, -1.52, -0.8) : interpolate(0.02, -0.12, -0.58)
     const scale = fit * (mobile ? interpolate(0.82, 0.88, 1.08) : interpolate(1, 0.87, 1.2))
@@ -276,14 +276,14 @@ function Instrument({ progressRef, active, reducedMotion }) {
   </group>
 }
 
-export default function JourneyScene({ progressRef, active = true, reducedMotion = false }) {
+export default function JourneyScene({ progressRef, active = true, reducedMotion = false, paused = false }) {
   const [failed, setFailed] = useState(() => !hasWebGL())
   const onFailure = useRef(() => setFailed(true)).current
   return <div className="journey-scene" role="img" aria-label="Kompas dan globe tiga dimensi Nusa" data-journey-renderer={failed ? 'static' : 'webgl'} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', display: 'grid', placeItems: 'center' }}>
     {failed ? <JourneyFallback /> : <SceneBoundary>
-      <Canvas camera={{ position: [0, 0, 10.5], fov: 35 }} dpr={[1, 1.5]} frameloop={active && !reducedMotion ? 'always' : 'demand'} gl={{ alpha: true, antialias: true, powerPreference: 'low-power' }} onCreated={({ gl }) => gl.setClearColor('#000000', 0)} fallback={<JourneyFallback />} style={{ width: '100%', height: '100%', pointerEvents: 'none' }}>
+      <Canvas camera={{ position: [0, 0, 10.5], fov: 35 }} dpr={[1, 1.25]} frameloop={active && !reducedMotion && !paused ? 'always' : 'demand'} gl={{ alpha: true, antialias: true, powerPreference: 'high-performance' }} onCreated={({ gl }) => gl.setClearColor('#000000', 0)} fallback={<JourneyFallback />} style={{ width: '100%', height: '100%', pointerEvents: 'none' }}>
         <SurfaceLighting onFailure={onFailure}/>
-        <Instrument progressRef={progressRef} active={active} reducedMotion={reducedMotion}/>
+        <Instrument progressRef={progressRef} active={active && !paused} reducedMotion={reducedMotion}/>
       </Canvas>
     </SceneBoundary>}
   </div>

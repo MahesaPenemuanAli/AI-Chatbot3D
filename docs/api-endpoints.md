@@ -74,12 +74,24 @@ Respons berhasil200:
     "id": 102,
     "role": "assistant",
     "content": "Berikut ide perjalananmu…",
+    "model": "gemini-3.5-flash-lite",
+    "fallback_used": false,
     "created_at": "2026-10-27T07:00:00.000000Z"
   }
 }
 ```
 
 Backend menyimpan satu giliran lengkap setelah jawaban penyedia berhasil. Kegagalan penyedia tidak menyimpan pesan maupun unggahan baru. Respons adalah JSON lengkap; animasi pengetikan hanya dilakukan frontend. Konteks penyedia dibatasi 20 pesan terbaru dan total anggaran media 20 MiB termasuk lampiran baru; arsip akun tidak dipotong.
+
+`ai_message.model` adalah model yang benar-benar menghasilkan jawaban.
+`fallback_used` bernilai true jika model cadangan dipakai ketika model utama
+timeout atau tidak tersedia. Kedua field juga tersedia pada GET riwayat pesan;
+pesan lama yang belum mempunyai metadata model mengembalikan model null.
+Nilai ini disimpan per pesan, sehingga pemulihan model utama tidak mengubah
+atribusi jawaban sebelumnya. Bawaan: model utama Gemini 3.5 Flash Lite,
+tanpa model cadangan dan tanpa percobaan ke Gemini 3.8. Jika cadangan
+diaktifkan secara eksplisit, cache kesehatan model selama 60 detik menghindari
+penantian yang sama pada setiap pertanyaan selama gangguan.
 
 ## Lampiran privat
 
@@ -100,5 +112,6 @@ Unggahan publik dari versi lama tetap perlu dimigrasikan. Dari backend jalankan 
 | 422 | Validasi pesan/lampiran gagal atau isi ditolak penyedia |
 | 429 | Pembatasan aplikasi atau kuota penyedia; coba setelah jeda |
 | 502/503 | Jawaban kosong, penyedia/jaringan/model/TLS/konfigurasi bermasalah |
+| 504 | AI_TIMEOUT: seluruh jalur AI belum memberi jawaban dalam batas waktu |
 
-Kesalahan penyedia terkontrol memuat message, code, retryable (dan response untuk kompatibilitas). Frontend menampilkan kegagalan dan tidak menggantinya dengan jawaban demo diam-diam. Detail kunci atau respons mentah penyedia tidak dikembalikan.
+Kesalahan penyedia terkontrol memuat message, code, retryable (dan response untuk kompatibilitas). Frontend hanya memakai AI langsung dan menampilkan kegagalan agar permintaan dapat dicoba ulang. Detail kunci atau respons mentah penyedia tidak dikembalikan.

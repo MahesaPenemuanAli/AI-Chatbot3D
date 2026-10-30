@@ -4,16 +4,38 @@ export const ATTACHMENT_ACCEPT = 'image/jpeg,image/png,image/webp,image/heic,ima
 const ALLOWED_TYPES = new Set(ATTACHMENT_ACCEPT.split(','))
 export const DEFAULT_UPLOAD_LIMITS = { max_attachment_bytes: MAX_ATTACHMENT_BYTES, max_total_attachment_bytes: MAX_ATTACHMENT_BYTES, max_attachment_count: MAX_ATTACHMENT_COUNT }
 
+const MODEL_NAMES = {
+  'gemini-3.8-flash': 'Gemini 3.8 Flash',
+  'gemini-3.7-flash': 'Gemini 3.7 Flash',
+  'gemini-3.5-flash-lite': 'Gemini 3.5 Flash Lite',
+  'gemini-2.5-flash': 'Gemini 2.5 Flash',
+  'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+}
+const validModel = value => typeof value === 'string' && value.length <= 80 && /^gemini-[a-z0-9]+(?:[._-][a-z0-9]+)*$/.test(value)
+
+// The actual responding model belongs to each reply, not the whole session:
+// one conversation can contain both primary and fallback answers.
+export function getReplyModelInfo(message) {
+  if (!message || typeof message !== 'object' || !validModel(message.model)) return {}
+  const fallback = message.fallback_used ?? message.fallbackUsed
+  return { model: message.model, ...(typeof fallback === 'boolean' ? { fallbackUsed: fallback } : {}) }
+}
+
+export function getModelDisplayName(model) {
+  return validModel(model) ? MODEL_NAMES[model] || model : 'AI'
+}
+
 export function getUploadLimits(serverLimits) {
   return Object.fromEntries(Object.entries(DEFAULT_UPLOAD_LIMITS).map(([key, fallback]) => [key, Number.isFinite(serverLimits?.[key]) && serverLimits[key] >= 0 ? Math.min(fallback, Math.floor(serverLimits[key])) : fallback]))
 }
 
 export function restoreSessions(data) {
   if (!Array.isArray(data)) return []
-  return data.filter(session => session && typeof session.id === 'string' && typeof session.title === 'string' && (session.mode === 'demo' || (session.mode === 'live' && typeof session.accountScope === 'string')) && Array.isArray(session.messages)).map(session => ({
-    id: session.id, title: session.title, mode: session.mode, accountScope: session.mode === 'live' ? session.accountScope : null, updated: Number.isFinite(session.updated) ? session.updated : 0,
+  return data.filter(session => session && typeof session.id === 'string' && typeof session.title === 'string' && session.mode === 'live' && typeof session.accountScope === 'string' && session.accountScope.trim() && Array.isArray(session.messages)).map(session => ({
+    id: session.id, title: session.title, mode: 'live', accountScope: session.accountScope, updated: Number.isFinite(session.updated) ? session.updated : 0,
     messages: session.messages.filter(message => message && ['user', 'assistant'].includes(message.role) && typeof message.content === 'string').map((message, index) => ({
       id: String(message.id ?? `${session.id}-${index}`), role: message.role, content: message.content,
+      ...(message.role === 'assistant' ? getReplyModelInfo(message) : {}),
       uploadState: message.uploadState === 'sending' ? 'interrupted' : ['sent', 'failed', 'canceled', 'interrupted'].includes(message.uploadState) ? message.uploadState : undefined,
       attachments: (Array.isArray(message.attachments) ? message.attachments : []).filter(attachment => attachment && typeof attachment.name === 'string').map(attachment => ({ id: String(attachment.id ?? attachment.name), name: attachment.name, type: typeof attachment.type === 'string' ? attachment.type : '', size: Number.isFinite(attachment.size) && attachment.size >= 0 ? attachment.size : 0, url: null })),
     })),
@@ -70,13 +92,14 @@ export function hydrateSession(session, history, accountScope, backendUrl, origi
     id: String(session.id), title: typeof session.title === 'string' && session.title ? session.title : 'Perjalanan tersimpan', mode: 'live', accountScope,
     messages: history.filter(message => message && typeof message.content === 'string' && ['user', 'assistant', 'model'].includes(message.role)).map((message, index) => ({
       id: String(message.id ?? `${session.id}-${index}`), role: message.role === 'model' ? 'assistant' : message.role, content: message.content,
+      ...(['assistant', 'model'].includes(message.role) ? getReplyModelInfo(message) : {}),
       attachments: (Array.isArray(message.attachments) ? message.attachments : []).filter(attachment => attachment && typeof attachment === 'object').map(attachment => toServerAttachment(attachment, backendUrl, origin)),
     })), updated: Date.parse(session.updated_at) || 0,
   }
 }
 
 export function isSessionVisible(session, accountScope) {
-  return session.mode === 'demo' || (Boolean(accountScope) && session.mode === 'live' && session.accountScope === accountScope)
+  return Boolean(accountScope) && session.mode === 'live' && session.accountScope === accountScope
 }
 
 export function validateAttachmentFiles(files, existing = [], limits = DEFAULT_UPLOAD_LIMITS) {

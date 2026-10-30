@@ -1,5 +1,7 @@
+import NusaMark from './NusaMark'
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { ArrowDown, ArrowUpRight, Compass, Route, Sparkles } from 'lucide-react'
+import { ArrowDown, ArrowUpRight, Compass, Route } from 'lucide-react'
+import { useLandingAnimationPaused } from './landingMotionContext'
 
 const JourneyScene = lazy(() => import('./JourneyScene'))
 const clamp = value => Math.min(1, Math.max(0, value))
@@ -12,7 +14,9 @@ export default function LandingStory({ openChat }) {
   const storyRef = useRef(null)
   const progressRef = useRef(0)
   const [active, setActive] = useState(() => !document.hidden)
-  const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  const [systemReducedMotion, setReducedMotion] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+  const animationPaused = useLandingAnimationPaused()
+  const reducedMotion = systemReducedMotion
 
   useEffect(() => {
     const root = storyRef.current
@@ -58,17 +62,17 @@ export default function LandingStory({ openChat }) {
   return <section className="journey-story" ref={storyRef} aria-label="Perjalanan bersama Nusa">
     <div className="journey-sticky" aria-hidden="true">
       <div className="journey-edge-light"/>
-      <div className="journey-scene"><Suspense fallback={<CompassFallback/>}><JourneyScene progressRef={progressRef} active={active} reducedMotion={reducedMotion}/></Suspense></div>
+      <div className="journey-scene"><Suspense fallback={<CompassFallback/>}><JourneyScene progressRef={progressRef} active={active} reducedMotion={reducedMotion} paused={animationPaused}/></Suspense></div>
       <div className="journey-guide"><span>RASA INGIN TAHU ADALAH KOMPASMU</span><i><b/></i><span>INDONESIA · NUSA AI</span></div>
     </div>
     <div className="journey-chapters">
       <section className="journey-chapter journey-opening" id="beranda">
-        <div className="opening-copy"><div className="eyebrow"><span/> YOUR CURIOSITY. A NEW DIRECTION.</div><h1>Rasa ingin<br/><em>tahu.</em></h1><p>Membawamu ke tempat baru.<br/>Nusa, teman AI 3D untuk setiap perjalananmu.</p><button className="button button-lime" onClick={() => openChat()}>Mulai cerita <ArrowUpRight size={18}/></button><span className="opening-note">Coba demo tanpa akun.</span></div>
+        <div className="opening-copy"><div className="eyebrow"><span/> YOUR CURIOSITY. A NEW DIRECTION.</div><h1>Rasa ingin<br/><em>tahu.</em></h1><p>Membawamu ke tempat baru.<br/>Nusa, teman AI 3D untuk setiap perjalananmu.</p><button className="button button-lime" onClick={() => openChat()}>Mulai cerita <ArrowUpRight size={18}/></button><span className="opening-note">Teman AI untuk rencana perjalananmu.</span></div>
         <a className="journey-scroll" href="#rencana"><ArrowDown size={17}/><span>GULIR. TEMUKAN ARAHMU.</span></a>
         <span className="chapter-index">01 — 03</span>
       </section>
       <section className="journey-chapter journey-planning" id="rencana">
-        <div className="planning-copy"><div className="eyebrow">01 / DARI IDE KE ITINERARY</div><h2>Ikuti rasa.<br/>Temukan <em>arah.</em></h2><p>Rencana yang terasa seperti kamu. Ceritakan minatmu, waktu yang kamu punya, dan suasana yang kamu cari. Kita rangkai sisanya bersama.</p><ul className="planning-points"><li><Route size={16}/><span>Rute sesuai ritmemu</span></li><li><Compass size={16}/><span>Destinasi & kuliner lokal</span></li><li><Sparkles size={16}/><span>Ide dari satu percakapan</span></li></ul><button className="text-button" onClick={() => openChat('Bantu aku merencanakan perjalanan di Indonesia sesuai minat dan waktuku.')}>Rangkai rencanamu <ArrowUpRight size={19}/></button></div>
+        <div className="planning-copy"><div className="eyebrow">01 / DARI IDE KE ITINERARY</div><h2>Ikuti rasa.<br/>Temukan <em>arah.</em></h2><p>Rencana yang terasa seperti kamu. Ceritakan minatmu, waktu yang kamu punya, dan suasana yang kamu cari. Kita rangkai sisanya bersama.</p><ul className="planning-points"><li><Route size={16}/><span>Rute sesuai ritmemu</span></li><li><Compass size={16}/><span>Destinasi & kuliner lokal</span></li><li><NusaMark size={16}/><span>Ide dari satu percakapan</span></li></ul><button className="text-button" onClick={() => openChat('Bantu aku merencanakan perjalanan di Indonesia sesuai minat dan waktuku.')}>Rangkai rencanamu <ArrowUpRight size={19}/></button></div>
         <span className="chapter-index">02 — 03</span>
       </section>
       <section className="journey-chapter journey-discovery">

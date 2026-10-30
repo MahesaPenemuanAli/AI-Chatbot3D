@@ -4,11 +4,19 @@ namespace App\Services;
 
 use App\Exceptions\ChatServiceException;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class GeminiChatService
 {
+    // Keep every provider attempt inside one deadline, below the browser's 65s
+    // request timeout. On Windows, PHP also counts time spent waiting on cURL.
+    protected const PROVIDER_TIMEOUT = 40;
+    protected const TOTAL_PROVIDER_TIMEOUT = 45;
+    protected const PHP_EXECUTION_BUDGET = 60;
+    protected const PRIMARY_COOLDOWN_SECONDS = 60;
+
     public function configured(): bool
     {
         return trim((string) config('services.gemini.key')) !== '';
@@ -16,7 +24,7 @@ class GeminiChatService
 
     public function model(): string
     {
-        return (string) config('services.gemini.model', 'gemini-2.5-flash');
+        return trim((string) config('services.gemini.model', 'gemini-3.5-flash-lite'));
     }
 
     public function generate(array $contents, string $instruction): array
@@ -26,10 +34,32 @@ class GeminiChatService
             throw new ChatServiceException('Layanan AI belum dikonfigurasi di server. Tambahkan GEMINI_API_KEY melalui pengaturan lingkungan.', 'AI_NOT_CONFIGURED');
         }
 
-        $models = array_unique(array_filter([
-            $this->model(),
-            config('services.gemini.fallback_model', 'gemini-2.5-flash-lite'),
-        ], fn ($model) => is_string($model) && preg_match('/^[a-zA-Z0-9._-]+$/', $model)));
+        $primaryModel = $this->model();
+        $fallbackModel = trim((string) config('services.gemini.fallback_model', ''));
+        if (! preg_match('/^[a-zA-Z0-9._-]+$/D', $primaryModel)
+            || ($fallbackModel !== '' && ! preg_match('/^[a-zA-Z0-9._-]+$/D', $fallbackModel))) {
+            throw new ChatServiceException('Nama model AI pada server belum valid. Periksa GEMINI_MODEL dan GEMINI_FALLBACK_MODEL.', 'AI_MODEL_CONFIGURATION');
+        }
+        $hasFallback = $fallbackModel !== '' && $fallbackModel !== $primaryModel;
+        $models = array_values(array_unique(array_filter([$primaryModel, $fallbackModel])));
+        $primaryTimeout = (int) config('services.gemini.primary_timeout_seconds', 12);
+        if ($primaryTimeout < 1 || $primaryTimeout > self::PROVIDER_TIMEOUT) {
+            throw new ChatServiceException('Batas waktu model utama belum valid. Gunakan 1 sampai 40 detik pada GEMINI_PRIMARY_TIMEOUT_SECONDS.', 'AI_MODEL_CONFIGURATION');
+        }
+        // Key and model both isolate the cooldown; cache names never contain the
+        // credential. Cache outages must not prevent a provider reply.
+        $cooldownKey = 'nusa:gemini:cooldown:'.hash('sha256', $key."\0".$primaryModel);
+        if ($hasFallback && $this->primaryCoolingDown($cooldownKey)) {
+            $models = [$fallbackModel];
+        }
+        $thinkingLevel = (string) config('services.gemini.thinking_level', 'low');
+        if (! in_array($thinkingLevel, ['low', 'medium', 'high'], true)) {
+            throw new ChatServiceException('Tingkat penalaran AI belum valid. Gunakan low, medium, atau high pada GEMINI_THINKING_LEVEL.', 'AI_MODEL_CONFIGURATION');
+        }
+        $maxOutputTokens = (int) config('services.gemini.max_output_tokens', 4096);
+        if ($maxOutputTokens < 1024 || $maxOutputTokens > 65536) {
+            throw new ChatServiceException('Batas jawaban AI belum valid. Gunakan 1024 sampai 65536 pada GEMINI_MAX_OUTPUT_TOKENS.', 'AI_MODEL_CONFIGURATION');
+        }
         $caBundle = config('services.gemini.ca_bundle');
         if ($caBundle !== null && $caBundle !== ''
             && (! is_string($caBundle) || ! is_file($caBundle) || ! is_readable($caBundle))) {
@@ -39,8 +69,33 @@ class GeminiChatService
         }
         $lastError = null;
 
+        $phpLimit = (int) ini_get('max_execution_time');
+        $timerReset = false;
+        if ($phpLimit > 0 && $phpLimit < self::PHP_EXECUTION_BUDGET && function_exists('set_time_limit')) {
+            // Scoped to this request; do not change the machine's php.ini.
+            $timerReset = @set_time_limit(self::PHP_EXECUTION_BUDGET);
+        }
+        $phpLimit = (int) ini_get('max_execution_time');
+        // Some hosts prohibit extending execution time. Leave room for Laravel
+        // to return a JSON error (or persist a successful turn) on those hosts.
+        $elapsed = $timerReset ? 0 : max(0, microtime(true) - ($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true)));
+        $totalTimeout = $phpLimit > 0 ? min(self::TOTAL_PROVIDER_TIMEOUT, $phpLimit - $elapsed - 10) : self::TOTAL_PROVIDER_TIMEOUT;
+        $deadline = hrtime(true) / 1e9 + $totalTimeout;
+
         foreach ($models as $model) {
-            $generation = ['temperature' => 0.7, 'maxOutputTokens' => 2048];
+            $remaining = $deadline - hrtime(true) / 1e9;
+            if ($remaining < 1) {
+                throw new ChatServiceException('Layanan AI belum selesai menjawab dalam batas waktu. Coba kirim lagi sebentar.', 'AI_TIMEOUT', 504, true);
+            }
+            $timeout = min(self::PROVIDER_TIMEOUT, $remaining);
+            if ($hasFallback && $model === $primaryModel) {
+                $timeout = min($primaryTimeout, $timeout);
+            }
+            $generation = ['maxOutputTokens' => $maxOutputTokens];
+            if (str_starts_with($model, 'gemini-3')) {
+                // Gemini 3 models use thinkingLevel rather than old sampling controls.
+                $generation['thinkingConfig'] = ['thinkingLevel' => $thinkingLevel, 'includeThoughts' => false];
+            }
             if (str_starts_with($model, 'gemini-2.5-flash')) {
                 $generation['thinkingConfig'] = ['thinkingBudget' => 0];
             }
@@ -50,21 +105,30 @@ class GeminiChatService
                 $response = Http::acceptJson()->asJson()
                     ->withHeaders(['x-goog-api-key' => $key])
                     ->withOptions(['verify' => $caBundle ?: true])
-                    ->connectTimeout(8)->timeout(25)
+                    ->connectTimeout(min(8, $timeout))->timeout($timeout)
                     ->post("https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent", [
                         'contents' => $contents,
                         'systemInstruction' => ['parts' => [['text' => $instruction]]],
                         'generationConfig' => $generation,
                     ]);
             } catch (ConnectionException $exception) {
-                $tlsError = str_contains($exception->getMessage(), 'cURL error 60');
-                Log::warning('Gemini connection failed', ['model' => $model, 'code' => $tlsError ? 'AI_TLS_ERROR' : 'AI_CONNECTION_FAILED']);
-                throw new ChatServiceException(
-                    $tlsError ? 'Sertifikat koneksi AI belum dapat diverifikasi. Periksa konfigurasi sertifikat server.' : 'Server belum dapat menghubungi layanan AI. Periksa koneksi lalu coba lagi.',
-                    $tlsError ? 'AI_TLS_ERROR' : 'AI_CONNECTION_FAILED',
-                    503,
+                $tlsError = (bool) preg_match('/cURL error (35|51|58|59|60|64|66|77|80|82|83|90|91)\b/', $exception->getMessage());
+                $timedOut = str_contains($exception->getMessage(), 'cURL error 28');
+                $code = $tlsError ? 'AI_TLS_ERROR' : ($timedOut ? 'AI_TIMEOUT' : 'AI_CONNECTION_FAILED');
+                Log::warning('Gemini connection failed', ['model' => $model, 'code' => $code]);
+                $lastError = new ChatServiceException(
+                    $tlsError ? 'Sertifikat koneksi AI belum dapat diverifikasi. Periksa konfigurasi sertifikat server.' : ($timedOut ? 'Layanan AI belum selesai menjawab dalam batas waktu. Coba kirim lagi sebentar.' : 'Server belum dapat menghubungi layanan AI. Periksa koneksi lalu coba lagi.'),
+                    $code,
+                    $timedOut ? 504 : 503,
                     ! $tlsError,
                 );
+                if (! $tlsError && $model === $primaryModel && $hasFallback) {
+                    if ($timedOut) {
+                        $this->coolDownPrimary($cooldownKey);
+                    }
+                    continue;
+                }
+                throw $lastError;
             }
 
             $data = $response->json();
@@ -79,6 +143,9 @@ class GeminiChatService
                     $parts,
                 )));
                 if ($text !== '') {
+                    if ($model === $primaryModel) {
+                        $this->clearPrimaryCooldown($cooldownKey);
+                    }
                     return [$text, $model];
                 }
                 if (isset($data['promptFeedback']['blockReason']) || in_array($candidate['finishReason'] ?? '', ['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT'], true)) {
@@ -109,8 +176,38 @@ class GeminiChatService
             if ($status !== 404 && $status < 500) {
                 throw $lastError;
             }
+            if ($model === $primaryModel && $hasFallback && $status === 503) {
+                $this->coolDownPrimary($cooldownKey);
+            }
         }
 
         throw $lastError ?? new ChatServiceException('Belum ada model AI yang tersedia di server.', 'AI_MODEL_UNAVAILABLE');
+    }
+
+    protected function primaryCoolingDown(string $key): bool
+    {
+        try {
+            return (bool) Cache::get($key, false);
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    protected function coolDownPrimary(string $key): void
+    {
+        try {
+            Cache::put($key, true, self::PRIMARY_COOLDOWN_SECONDS);
+        } catch (\Throwable) {
+            // Failover still works when shared cache storage is unavailable.
+        }
+    }
+
+    protected function clearPrimaryCooldown(string $key): void
+    {
+        try {
+            Cache::forget($key);
+        } catch (\Throwable) {
+            // A genuine provider response must not become a cache failure.
+        }
     }
 }

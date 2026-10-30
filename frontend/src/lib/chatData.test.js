@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { DEFAULT_UPLOAD_LIMITS, MAX_ATTACHMENT_BYTES, getAccountScope, getInitialBackendUrl, getServiceKey, getUploadLimits, hydrateSession, isSessionVisible, mergeRemoteSessions, normalizeBackendUrl, restoreAccount, restoreSessions, serializeSessions, toServerAttachment, validateAttachmentFiles } from './chatData.js'
+import { DEFAULT_UPLOAD_LIMITS, MAX_ATTACHMENT_BYTES, getAccountScope, getInitialBackendUrl, getModelDisplayName, getReplyModelInfo, getServiceKey, getUploadLimits, hydrateSession, isSessionVisible, mergeRemoteSessions, normalizeBackendUrl, restoreAccount, restoreSessions, serializeSessions, toServerAttachment, validateAttachmentFiles } from './chatData.js'
 
 test('API defaults migrate old loopback addresses without replacing custom services', () => {
   assert.equal(getInitialBackendUrl(), '/api')
@@ -108,9 +108,9 @@ test('effective server upload limits override generous UI defaults before files 
 })
 
 test('malformed saved history cannot inject media URLs or crash file rendering', () => {
-  const restored = restoreSessions([null, { id: 1 }, { id: 'demo', title: 'Trip', mode: 'demo', messages: [null, { role: 'user', content: 'Bali', uploadState: 'sending', attachments: [{ name: 'photo.png', type: {}, size: -1, url: 'https://other.test/tracker' }] }] }])
+  const restored = restoreSessions([null, { id: 1 }, { id: 'live', title: 'Trip', mode: 'live', accountScope: 'scope', messages: [null, { role: 'user', content: 'Bali', uploadState: 'sending', attachments: [{ name: 'photo.png', type: {}, size: -1, url: 'https://other.test/tracker' }] }] }])
   assert.equal(restored.length, 1)
-  assert.equal(restored[0].accountScope, null)
+  assert.equal(restored[0].accountScope, 'scope')
   assert.equal(restored[0].messages[0].uploadState, 'interrupted')
   assert.deepEqual(restored[0].messages[0].attachments[0], { id: 'photo.png', name: 'photo.png', type: '', size: 0, url: null })
   assert.deepEqual(restoreSessions({}), [])
@@ -122,4 +122,60 @@ test('local history budget retains the most recently used conversations', () => 
   assert.equal(saved.length, 40)
   assert.equal(saved[0].id, '40')
   assert.equal(saved.some(session => session.id === '0'), false)
+})
+
+test('each AI reply retains its actual primary or fallback model through hydration and reload', () => {
+  const session = hydrateSession({ id: 'models', title: 'Model campuran', model: 'gemini-3.8-flash' }, [
+    { id: 1, role: 'user', content: 'Halo', model: 'gemini-3.8-flash', fallback_used: true },
+    { id: 2, role: 'model', content: 'Halo dari model utama.', model: 'gemini-3.8-flash', fallback_used: false },
+    { id: 3, role: 'assistant', content: 'Halo dari model cadangan.', model: 'gemini-3.5-flash-lite', fallback_used: true },
+  ], 'scope', '/api', 'https://nusa.example.test')
+  assert.equal(session.messages[0].model, undefined)
+  assert.equal(session.messages[0].fallbackUsed, undefined)
+  assert.equal(session.messages[1].model, 'gemini-3.8-flash')
+  assert.equal(session.messages[1].fallbackUsed, false)
+  assert.equal(session.messages[2].model, 'gemini-3.5-flash-lite')
+  assert.equal(session.messages[2].fallbackUsed, true)
+
+  const restored = restoreSessions(serializeSessions([session]))[0]
+  assert.equal(restored.messages[1].model, 'gemini-3.8-flash')
+  assert.equal(restored.messages[1].fallbackUsed, false)
+  assert.equal(restored.messages[2].model, 'gemini-3.5-flash-lite')
+  assert.equal(restored.messages[2].fallbackUsed, true)
+  assert.equal(getModelDisplayName(restored.messages[2].model), 'Gemini 3.5 Flash Lite')
+})
+
+test('legacy AI history retains model metadata rules and retired demo sessions never appear as AI', () => {
+  const old = hydrateSession({ id: 'old', title: 'Lama', model: 'gemini-3.8-flash' }, [
+    { role: 'assistant', content: 'Jawaban sebelum metadata model tersedia.' },
+  ], 'scope', '/api', 'https://nusa.example.test')
+  assert.equal(old.messages[0].model, undefined)
+  assert.equal(old.messages[0].fallbackUsed, undefined)
+  const demo = {
+    id: 'demo', title: 'Demo', mode: 'demo', messages: [
+      { role: 'assistant', content: 'Contoh lokal.', model: 'gemini-3.5-flash-lite', fallbackUsed: true },
+    ],
+  }
+  assert.deepEqual(restoreSessions([demo, { ...demo, accountScope: 'scope' }]), [])
+  assert.equal(isSessionVisible(demo, 'scope'), false)
+  assert.equal(isSessionVisible(demo, null), false)
+})
+
+test('live history remains private until its owning account is verified', () => {
+  const live = { id: 'live', title: 'Bali', mode: 'live', accountScope: 'scope', messages: [{ role: 'assistant', content: 'Rute dari AI.' }] }
+  const restored = restoreSessions([live, { ...live, accountScope: null }, { ...live, accountScope: '' }, { ...live, accountScope: ' ' }])
+  assert.equal(restored.length, 1)
+  assert.equal(isSessionVisible(restored[0], null), false)
+  assert.equal(isSessionVisible(restored[0], 'other-account'), false)
+  assert.equal(isSessionVisible(restored[0], 'scope'), true)
+})
+
+test('reply model metadata validates identifiers and boolean fallback flags before display', () => {
+  for (const model of [null, {}, [], 'models/gemini-3.8-flash', 'gemini-3.8-flash?key=private', '<b>gemini</b>', `gemini-${'a'.repeat(81)}`, 'gemini-3.8-flash\n']) {
+    assert.deepEqual(getReplyModelInfo({ model, fallback_used: true }), {})
+    assert.equal(getModelDisplayName(model), 'AI')
+  }
+  assert.deepEqual(getReplyModelInfo({ model: 'gemini-3.5-flash-lite', fallback_used: 'true' }), { model: 'gemini-3.5-flash-lite' })
+  assert.deepEqual(getReplyModelInfo({ model: 'gemini-3.5-flash-lite', fallbackUsed: true }), { model: 'gemini-3.5-flash-lite', fallbackUsed: true })
+  assert.deepEqual(getReplyModelInfo({ model: 'gemini-3.8-flash', fallback_used: false, fallbackUsed: true }), { model: 'gemini-3.8-flash', fallbackUsed: false })
 })

@@ -1,0 +1,41 @@
+.chat-camera-overlay { position: fixed; inset: 0; z-index: 120; display: flex; align-items: center; justify-content: center; padding: 24px; background: #0b0a13ba; backdrop-filter: blur(8px); }
+.chat-camera-dialog { width: min(100%,580px); max-height: calc(100dvh - 48px); overflow-y: auto; overscroll-behavior: contain; background: #ebeaf2; border: 1px solid #a9a3c5; border-radius: 18px; padding: 25px; color: #272437; box-shadow: 0 24px 100px #0004; }
+.chat-camera-dialog>header { display: flex; gap: 13px; align-items: center; margin-bottom: 22px; }
+.chat-camera-icon { flex-shrink: 0; width: 43px; height: 43px; display: grid; place-items: center; background: #2e2a41; color: #a092e3; border-radius: 50%; }
+.chat-camera-dialog h2 { font-family: 'Manrope',sans-serif; font-size: 21px; letter-spacing: -.8px; line-height: 1.4; font-weight: 600; margin: 0 0 5px; }
+.chat-camera-dialog header p { margin: 0; font-size: 13px; line-height: 1.65; color: #535062; }
+.chat-camera-close { flex-shrink: 0; display: grid; place-items: center; width: 40px; min-height: 40px!important; border-radius: 50%; background: #dddbe7; margin-left: auto; }
+.chat-camera-stage { position: relative; width: 100%; aspect-ratio: 4/3; background: #161324; border-radius: 12px; overflow: hidden; }
+.chat-camera-stage>video,.chat-camera-stage>img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.chat-camera-stage>video.is-front-camera { transform: scaleX(-1); }
+.chat-camera-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 17px; color: #b9b4d2; font-size: 13px; padding: 20px; text-align: center; }
+.chat-camera-live { position: absolute; top: 14px; left: 14px; display: flex; align-items: center; gap: 8px; color: #e7e4f3; background: #16132499; border: 1px solid #a092e345; border-radius: 20px; font-size: 10px; letter-spacing: 1px; padding: 8px 11px; }
+.chat-camera-live>i { width: 5px; height: 5px; border-radius: 50%; background: #a092e3; }
+.chat-camera-actions { display: flex; align-items: stretch; gap: 10px; margin-top: 19px; }
+.chat-camera-actions>button { display: flex; align-items: center; justify-content: center; gap: 9px; flex: 1; min-height: 46px!important; padding: 12px; border-radius: 8px; font-size: 14px!important; font-weight: 500!important; }
+.chat-camera-primary { color: #ebeaf2; background: #2b2640; }
+.chat-camera-primary:hover { background: #3e3a54; }
+.chat-camera-secondary { background: #e0deea; color: #36324c; border: 1px solid #b0acc5!important; }
+.chat-camera-secondary:hover { background: #d2cee3; }
+.chat-camera-error { background: #f0e6d6; border: 1px solid #dbc5a7; border-radius: 8px; padding: 12px 14px; font-size: 13px; line-height: 1.7; margin: 15px 0 0; color: #674b28; }
+.chat-camera-fallback { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px 20px; margin-top: 14px; }
+.chat-camera-fallback>button { display: inline-flex; align-items: center; gap: 7px; padding: 7px 0; background: transparent; color: #393452; font-size: 13px!important; text-decoration: underline; text-underline-offset: 4px; }
+.chat-camera-note { margin: 17px 0 0; color: #535062; font-size: 12px; line-height: 1.7; text-align: center; }
+.chat-camera-button { display: grid; place-items: center; width: 36px; height: 36px; color: #4f4a68; background: transparent; border-radius: 8px; }
+.chat-camera-button:hover { background: #e0deea; }
+@media(max-width:760px) {
+  .chat-camera-overlay { padding: 16px; }
+  .chat-camera-dialog { padding: 21px 17px; max-height: calc(100dvh - 32px); border-radius: 15px; }
+  .chat-camera-dialog>header { gap: 10px; margin-bottom: 18px; align-items: flex-start; }
+  .chat-camera-icon { width: 35px; height: 35px; }
+  .chat-camera-dialog h2 { font-size: 19px; }
+  .chat-camera-dialog header p { font-size: 12px; }
+  .chat-camera-close { width: 36px; min-height: 36px!important; }
+  .chat-camera-actions>button { font-size: 13px!important; padding-inline: 8px; gap: 7px; }
+  .chat-camera-button { width: 42px; min-width: 42px; min-height: 44px!important; }
+  .chat-composer-controls>span { max-width: 130px; line-height: 1.5; }
+}
+@media(max-width:370px) {
+  .chat-composer-controls>span { display: none; }
+  .chat-composer-controls>div { width: 100%; justify-content: flex-end; }
+}

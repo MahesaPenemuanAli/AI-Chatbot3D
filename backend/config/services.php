@@ -4,8 +4,11 @@ return [
 
     'gemini' => [
         'key' => env('GEMINI_API_KEY'),
-        'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
-        'fallback_model' => env('GEMINI_FALLBACK_MODEL', 'gemini-2.5-flash-lite'),
+        'model' => env('GEMINI_MODEL', 'gemini-3.5-flash-lite'),
+        'fallback_model' => env('GEMINI_FALLBACK_MODEL', ''),
+        'primary_timeout_seconds' => (int) env('GEMINI_PRIMARY_TIMEOUT_SECONDS', 12),
+        'thinking_level' => env('GEMINI_THINKING_LEVEL', 'low'),
+        'max_output_tokens' => (int) env('GEMINI_MAX_OUTPUT_TOKENS', 4096),
         // Use PHP's trusted system/proxy CA bundle unless explicitly overridden.
         'ca_bundle' => env('GEMINI_CA_BUNDLE'),
     ],

@@ -130,7 +130,7 @@
 .landing-page .companion-halo::after { content:''; position:absolute; inset:5%; border:1px solid #9eb38424; border-radius:50%; }
 .landing-page .companion-intro-avatar { position:absolute; inset:0 -13%; }
 .landing-page .companion-poster { position:absolute; inset:9% 21%; overflow:hidden; }
-.landing-page .companion-poster img { width:100%; height:100%; object-fit:cover; object-position:50% 30%; mix-blend-mode:multiply; filter:saturate(.65); }
+.landing-page .companion-poster>svg { width:100%; height:100%; }
 .landing-page .companion-poster>span { position:absolute; bottom:20px; left:50%; translate:-50% 0; display:flex; align-items:center; gap:7px; border-radius:20px; padding:8px 12px; background:#f4f8e9df; color:#52683f; font-size:9px; white-space:nowrap; }
 .landing-page .companion-stage-label { position:absolute; left:0; top:16px; font-size:7px; letter-spacing:1.2px; color:#7d9068; z-index:1; }
 .landing-page .companion-wave { position:absolute; bottom:0; left:50%; translate:-50% 0; z-index:2; display:flex; align-items:center; gap:16px; border:1px solid #9dae88; background:#f7faef; color:#26422d; font-size:11px; padding:11px 19px; border-radius:30px; }
@@ -422,3 +422,16 @@
   .landing-page .destination-card { scroll-snap-align:center; }
   .app-loading>svg,.avatar-loading>svg { animation:none; }
 }
+
+/* The companion introduction shares the chat's new visual language. */
+.landing-page .companion-intro { background:linear-gradient(125deg,#f1edfb,#fbf6f2); color:#392e48; }
+.landing-page .companion-halo { border-color:#d2c6e466; background:radial-gradient(ellipse,#e2d8f480,transparent 70%); }
+.landing-page .companion-halo::after { border-color:#d2c6e444; }
+.landing-page .companion-stage-label,.landing-page .companion-stage-coordinate { color:#9685a5; }
+.landing-page .companion-intro-copy .eyebrow { color:#8b73a2; }
+.landing-page .companion-intro-copy h2 em { color:#9c7eb9; }
+.landing-page .companion-intro-copy>p { color:#806d90; font-size:15px; line-height:1.9; }
+.landing-page .companion-wave { background:#fff; color:#806094; border-color:#e9dff1; font-size:13px; min-height:44px; }
+.landing-page .companion-wave:hover { background:#eee6f9; }
+.landing-page .companion-intro-copy .button { background:#8d6fb0; color:#fff; border-color:#8d6fb0; border-radius:30px; font-size:13px; }
+.landing-page .companion-intro :focus-visible { outline-color:#a18abf; }
